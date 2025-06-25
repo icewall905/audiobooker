@@ -4,6 +4,7 @@ from chatterbox.tts import ChatterboxTTS
 import re
 import os
 import sys
+import time
 from pathlib import Path
 import argparse
 from typing import List, Optional
@@ -96,6 +97,9 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                    chapter_pause: float = 2.0):
     """Create audiobook from document using Chatterbox TTS."""
     
+    # Start overall timing
+    start_time = time.time()
+    
     if not validate_inputs(document_path, voice_prompt_path):
         return False
     
@@ -104,9 +108,11 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
 
     # Initialize the Chatterbox model
     print("Loading ChatterboxTTS model...")
+    model_load_start = time.time()
     try:
         model = ChatterboxTTS.from_pretrained(device=device)
-        print("Model loaded successfully.")
+        model_load_time = time.time() - model_load_start
+        print(f"Model loaded successfully in {model_load_time:.1f}s")
     except Exception as e:
         print(f"Error loading model: {e}")
         return False
@@ -130,6 +136,14 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     # Synthesize each chunk
     audio_chunks = []
     print("Starting audio generation for each chunk...")
+    
+    # Track timing and stats
+    generation_start = time.time()
+    total_chars = sum(len(chunk['text']) for chunk in text_chunks)
+    chapters_detected = sum(1 for chunk in text_chunks if chunk['is_chapter_start'])
+    
+    if chapters_detected > 0:
+        print(f"📖 Detected {chapters_detected} chapters with {chapter_pause}s pauses between them")
     
     for i, chunk_data in enumerate(text_chunks, 1):
         chunk_text = chunk_data['text']
@@ -180,11 +194,34 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         print(f"Saving final audiobook to {output_path} with sample rate {model.sr} Hz...")
         ta.save(output_path, full_audio.unsqueeze(0), model.sr)
         
+        # Calculate comprehensive statistics
+        total_time = time.time() - start_time
+        generation_time = time.time() - generation_start
         duration_seconds = len(full_audio) / model.sr
         duration_minutes = duration_seconds / 60
-        print(f"Audiobook creation complete!")
-        print(f"Duration: {duration_minutes:.1f} minutes ({duration_seconds:.1f} seconds)")
-        print(f"Output saved to: {output_path}")
+        
+        # Performance metrics
+        chars_per_second = total_chars / generation_time if generation_time > 0 else 0
+        realtime_factor = duration_seconds / total_time if total_time > 0 else 0
+        
+        print(f"\n🎉 Audiobook creation complete!")
+        print(f"📊 Statistics:")
+        print(f"   📖 Input text: {total_chars:,} characters")
+        print(f"   📝 Text chunks: {len(text_chunks)}")
+        if chapters_detected > 0:
+            print(f"   📚 Chapters detected: {chapters_detected}")
+            print(f"   ⏸️  Chapter pauses: {chapter_pause}s each")
+        print(f"   🎵 Audio duration: {duration_minutes:.1f} minutes ({duration_seconds:.1f} seconds)")
+        print(f"   💾 Output file: {output_path}")
+        print(f"   📏 File size: {os.path.getsize(output_path) / 1024 / 1024:.1f} MB")
+        print(f"\n⏱️  Performance:")
+        print(f"   🤖 Model loading: {model_load_time:.1f}s")
+        print(f"   🎤 Audio generation: {generation_time:.1f}s")
+        print(f"   🕒 Total processing time: {total_time:.1f}s")
+        print(f"   ⚡ Processing speed: {chars_per_second:.0f} chars/sec")
+        print(f"   🚀 Realtime factor: {realtime_factor:.1f}x")
+        print(f"   🎯 GPU acceleration: {'Yes' if device == 'cuda' else 'No'}")
+        
         return True
         
     except Exception as e:
