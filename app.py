@@ -4,37 +4,19 @@ from chatterbox.tts import ChatterboxTTS
 import re
 import os
 import sys
-import time
 from pathlib import Path
 import argparse
 from typing import List, Optional
 
 # --- Configuration ---
-VERSION = "0.0.2"
 DOCUMENT_PATH = "sample_document.txt" 
 VOICE_PROMPT_PATH = None  # Set to your voice reference file path if available
 OUTPUT_PATH = "my_audiobook.wav" 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_CHUNK_LENGTH = 300
 
-def is_chapter_start(text: str) -> bool:
-    """Check if text starts with a chapter heading."""
-    chapter_patterns = [
-        r'^Chapter\s+\d+',
-        r'^CHAPTER\s+\d+', 
-        r'^Ch\.\s*\d+',
-        r'^Part\s+\d+',
-        r'^PART\s+\d+',
-        r'^\d+\.\s*[A-Z]',  # Numbered sections
-    ]
-    
-    for pattern in chapter_patterns:
-        if re.match(pattern, text.strip(), re.IGNORECASE):
-            return True
-    return False
-
-def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[dict]:
-    """Intelligently split text into chunks, respecting sentence boundaries and marking chapter starts."""
+def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
+    """Intelligently split text into chunks, respecting sentence boundaries."""
     paragraphs = re.split(r'\n\s*\n', text)
     chunks = []
     
@@ -44,38 +26,22 @@ def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[dict
             continue
             
         if len(paragraph) <= max_length:
-            chunks.append({
-                'text': paragraph,
-                'is_chapter_start': is_chapter_start(paragraph)
-            })
+            chunks.append(paragraph)
         else:
             sentences = re.split(r'(?<=[.!?])\s+', paragraph)
             current_chunk = ""
             
             for sentence in sentences:
                 if current_chunk and len(current_chunk + " " + sentence) > max_length:
-                    chunk_text = current_chunk.strip()
-                    chunks.append({
-                        'text': chunk_text,
-                        'is_chapter_start': is_chapter_start(chunk_text)
-                    })
+                    chunks.append(current_chunk.strip())
                     current_chunk = sentence
                 else:
                     current_chunk = current_chunk + " " + sentence if current_chunk else sentence
             
             if current_chunk.strip():
-                chunk_text = current_chunk.strip()
-                chunks.append({
-                    'text': chunk_text,
-                    'is_chapter_start': is_chapter_start(chunk_text)
-                })
+                chunks.append(current_chunk.strip())
     
     return chunks
-
-def create_silence(duration_seconds: float, sample_rate: int = 24000) -> torch.Tensor:
-    """Create a silence tensor of specified duration."""
-    num_samples = int(duration_seconds * sample_rate)
-    return torch.zeros(num_samples)
 
 def validate_inputs(document_path: str, voice_prompt_path: Optional[str] = None) -> bool:
     """Validate that required input files exist."""
@@ -94,12 +60,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                    output_path: str = OUTPUT_PATH,
                    exaggeration: float = 0.5,
                    cfg_weight: float = 0.5,
-                   device: str = DEVICE,
-                   chapter_pause: float = 2.0):
+                   device: str = DEVICE):
     """Create audiobook from document using Chatterbox TTS."""
-    
-    # Start overall timing
-    start_time = time.time()
     
     if not validate_inputs(document_path, voice_prompt_path):
         return False
@@ -109,11 +71,9 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
 
     # Initialize the Chatterbox model
     print("Loading ChatterboxTTS model...")
-    model_load_start = time.time()
     try:
         model = ChatterboxTTS.from_pretrained(device=device)
-        model_load_time = time.time() - model_load_start
-        print(f"Model loaded successfully in {model_load_time:.1f}s")
+        print("Model loaded successfully.")
     except Exception as e:
         print(f"Error loading model: {e}")
         return False
@@ -138,39 +98,19 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     audio_chunks = []
     print("Starting audio generation for each chunk...")
     
-    # Track timing and stats
-    generation_start = time.time()
-    total_chars = sum(len(chunk['text']) for chunk in text_chunks)
-    chapters_detected = sum(1 for chunk in text_chunks if chunk['is_chapter_start'])
-    
-    if chapters_detected > 0:
-        print(f"📖 Detected {chapters_detected} chapters with {chapter_pause}s pauses between them")
-    
-    for i, chunk_data in enumerate(text_chunks, 1):
-        chunk_text = chunk_data['text']
-        is_chapter = chunk_data['is_chapter_start']
-        
-        # Add chapter pause before chapter starts (except for the first chunk)
-        if is_chapter and i > 1 and chapter_pause > 0:
-            print(f"Adding {chapter_pause}s chapter pause before chunk {i}...")
-            silence = create_silence(chapter_pause, sample_rate=model.sr)
-            audio_chunks.append(silence)
-        
-        print(f"Generating audio for chunk {i}/{len(text_chunks)} ({len(chunk_text)} chars)...")
-        if is_chapter:
-            print("  📖 Chapter start detected")
-            
+    for i, chunk in enumerate(text_chunks, 1):
+        print(f"Generating audio for chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
         try:
             if voice_prompt_path:
                 wav = model.generate(
-                    chunk_text,
+                    chunk,
                     audio_prompt_path=voice_prompt_path,
                     exaggeration=exaggeration,
                     cfg_weight=cfg_weight
                 )
             else:
                 wav = model.generate(
-                    chunk_text,
+                    chunk,
                     exaggeration=exaggeration,
                     cfg_weight=cfg_weight
                 )
@@ -195,34 +135,11 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         print(f"Saving final audiobook to {output_path} with sample rate {model.sr} Hz...")
         ta.save(output_path, full_audio.unsqueeze(0), model.sr)
         
-        # Calculate comprehensive statistics
-        total_time = time.time() - start_time
-        generation_time = time.time() - generation_start
         duration_seconds = len(full_audio) / model.sr
         duration_minutes = duration_seconds / 60
-        
-        # Performance metrics
-        chars_per_second = total_chars / generation_time if generation_time > 0 else 0
-        realtime_factor = duration_seconds / total_time if total_time > 0 else 0
-        
-        print(f"\n🎉 Audiobook creation complete!")
-        print(f"📊 Statistics:")
-        print(f"   📖 Input text: {total_chars:,} characters")
-        print(f"   📝 Text chunks: {len(text_chunks)}")
-        if chapters_detected > 0:
-            print(f"   📚 Chapters detected: {chapters_detected}")
-            print(f"   ⏸️  Chapter pauses: {chapter_pause}s each")
-        print(f"   🎵 Audio duration: {duration_minutes:.1f} minutes ({duration_seconds:.1f} seconds)")
-        print(f"   💾 Output file: {output_path}")
-        print(f"   📏 File size: {os.path.getsize(output_path) / 1024 / 1024:.1f} MB")
-        print(f"\n⏱️  Performance:")
-        print(f"   🤖 Model loading: {model_load_time:.1f}s")
-        print(f"   🎤 Audio generation: {generation_time:.1f}s")
-        print(f"   🕒 Total processing time: {total_time:.1f}s")
-        print(f"   ⚡ Processing speed: {chars_per_second:.0f} chars/sec")
-        print(f"   🚀 Realtime factor: {realtime_factor:.1f}x")
-        print(f"   🎯 GPU acceleration: {'Yes' if device == 'cuda' else 'No'}")
-        
+        print(f"Audiobook creation complete!")
+        print(f"Duration: {duration_minutes:.1f} minutes ({duration_seconds:.1f} seconds)")
+        print(f"Output saved to: {output_path}")
         return True
         
     except Exception as e:
@@ -244,8 +161,6 @@ def main():
                        help="CFG weight (0.0-1.0, default: 0.5)")
     parser.add_argument("--device", default=DEVICE,
                        help="Device to use (cuda/cpu)")
-    parser.add_argument("--chapter-pause", type=float, default=1.0,
-                       help="Pause duration between chapters in seconds (default: 1.0)")
     parser.add_argument("--no-voice", action="store_true",
                        help="Don't use voice reference (use default voice)")
     
@@ -259,15 +174,14 @@ def main():
     elif args.no_voice:
         voice_path = None
     
-    print(f"=== Chatterbox Audiobook Creator v{VERSION} ===")
+    print("=== Chatterbox Audiobook Creator ===")
     print(f"Document: {args.document}")
     print(f"Voice reference: {voice_path if voice_path else 'Default voice'}")
     print(f"Output: {args.output}")
     print(f"Exaggeration: {args.exaggeration}")
     print(f"CFG Weight: {args.cfg_weight}")
-    print(f"Chapter pause: {args.chapter_pause}s")
     print(f"Device: {args.device}")
-    print("=" * 40)
+    print("=" * 35)
     
     success = create_audiobook(
         document_path=args.document,
@@ -275,8 +189,7 @@ def main():
         output_path=args.output,
         exaggeration=args.exaggeration,
         cfg_weight=args.cfg_weight,
-        device=args.device,
-        chapter_pause=args.chapter_pause
+        device=args.device
     )
     
     if success:
