@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 VENV_DIR="audiobooker-env"
 CURRENT_DIR=$(pwd)
 
-echo -e "${BLUE}=== Audiobook Creator Web Interface ===${NC}"
+echo -e "${BLUE}=== Audiobook Creator Web Interface Launcher ===${NC}"
 echo ""
 
 # Check if virtual environment exists
@@ -38,46 +38,59 @@ else
     exit 1
 fi
 
-# Check if web_interface.py exists
+# Check if required files exist
 if [ ! -f "web_interface.py" ]; then
     echo -e "${RED}❌ web_interface.py not found in current directory${NC}"
     echo "Make sure you're in the correct directory with the audiobook creator files."
     exit 1
 fi
 
-echo -e "${GREEN}✅ web_interface.py found${NC}"
+if [ ! -f "app.py" ]; then
+    echo -e "${RED}❌ app.py not found in current directory${NC}"
+    echo "The web interface requires app.py to function."
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Required files found${NC}"
 
 # Check if gradio is installed
-echo -e "${CYAN}🔄 Checking Gradio installation...${NC}"
+echo -e "${CYAN}🔍 Checking for Gradio...${NC}"
 python -c "import gradio" 2>/dev/null
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Gradio is installed${NC}"
-else
+if [ $? -ne 0 ]; then
     echo -e "${YELLOW}⚠️  Gradio not found. Installing...${NC}"
     pip install gradio>=4.0.0
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Gradio installed successfully${NC}"
-    else
+    if [ $? -ne 0 ]; then
         echo -e "${RED}❌ Failed to install Gradio${NC}"
         exit 1
     fi
+    echo -e "${GREEN}✅ Gradio installed successfully${NC}"
+else
+    echo -e "${GREEN}✅ Gradio is already installed${NC}"
+fi
+
+# Check GPU status
+if command -v nvidia-smi &> /dev/null; then
+    echo -e "${GREEN}✅ NVIDIA GPU detected${NC}"
+    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits | head -1)
+    echo -e "${CYAN}   GPU: $GPU_INFO${NC}"
+else
+    echo -e "${YELLOW}⚠️  No NVIDIA GPU detected - will use CPU (slower)${NC}"
 fi
 
 echo ""
-echo -e "${BLUE}🚀 Starting Web Interface...${NC}"
+echo -e "${BLUE}=== Starting Web Interface ===${NC}"
 echo ""
-echo -e "${CYAN}📱 The web interface will be available at:${NC}"
-echo -e "${GREEN}   • Local:    http://localhost:7860${NC}"
-echo -e "${GREEN}   • Network:  http://$(hostname -I | awk '{print $1}'):7860${NC}"
+echo -e "${CYAN}🌐 Web interface will be available at:${NC}"
+echo -e "${GREEN}   • Local:   http://localhost:7860${NC}"
+echo -e "${GREEN}   • Network: http://$(hostname -I | cut -d' ' -f1):7860${NC}"
 echo ""
 echo -e "${YELLOW}💡 Tips:${NC}"
-echo "   • Upload text files or paste text directly"
-echo "   • Add voice samples for voice cloning"
-echo "   • Adjust settings for different narration styles"
-echo "   • Chapter titles are automatically detected"
-echo ""
-echo -e "${CYAN}🛑 Press Ctrl+C to stop the server${NC}"
+echo -e "${YELLOW}   • Upload .txt files or paste text directly${NC}"
+echo -e "${YELLOW}   • Upload voice samples (.wav, .mp3, .m4a, .flac) for voice cloning${NC}"
+echo -e "${YELLOW}   • Adjust settings for different speech styles${NC}"
+echo -e "${YELLOW}   • Chapter detection works automatically${NC}"
+echo -e "${YELLOW}   • Press Ctrl+C to stop the server${NC}"
 echo ""
 
-# Start the web interface
+# Launch the web interface
 python web_interface.py

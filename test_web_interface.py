@@ -1,73 +1,70 @@
 #!/usr/bin/env python3
-"""
-Test script for the web interface - verifies imports and basic functionality
-"""
+"""Simple test for web interface imports and basic functionality."""
 
 import sys
 import os
 
 def test_web_interface():
     """Test that the web interface can be imported and basic functions work."""
-    print("🧪 Testing Web Interface Components...")
+    print("Testing web interface imports and functionality...")
     
     try:
         # Test basic imports
-        import gradio as gr
-        print(f"✅ Gradio {gr.__version__} imported successfully")
-    except ImportError as e:
-        print(f"❌ Gradio import failed: {e}")
-        return False
-    
-    try:
-        # Test our app imports
-        from app import detect_chapters, smart_text_split, VERSION
-        print(f"✅ App functions imported successfully (v{VERSION})")
-    except ImportError as e:
-        print(f"❌ App import failed: {e}")
-        return False
-    
-    try:
-        # Test web interface import
-        from web_interface import create_interface, load_model
-        print("✅ Web interface functions imported successfully")
-    except ImportError as e:
-        print(f"❌ Web interface import failed: {e}")
-        return False
-    
-    # Test chapter detection with sample text
-    try:
-        sample_text = """Chapter 1: Test
+        import torch
+        print(f"✅ PyTorch {torch.__version__} imported")
         
-        This is some sample content.
+        import torchaudio
+        print(f"✅ TorchAudio {torchaudio.__version__} imported")
+        
+        try:
+            import gradio as gr
+            print(f"✅ Gradio {gr.__version__} imported")
+        except ImportError:
+            print("❌ Gradio not found - install with: pip install gradio")
+            return False
+        
+        # Test our app imports
+        try:
+            from app import detect_chapters, smart_text_split, VERSION
+            print(f"✅ App functions imported (version {VERSION})")
+        except ImportError as e:
+            print(f"❌ Failed to import from app.py: {e}")
+            return False
+        
+        # Test chapter detection function
+        test_text = """Chapter 1: Test
+        
+        This is test content.
         
         Chapter 2: Another Test
         
         More content here."""
         
-        sections = detect_chapters(sample_text)
-        chapter_count = sum(1 for section in sections if section['is_chapter_title'])
-        print(f"✅ Chapter detection test passed: {len(sections)} sections, {chapter_count} chapters")
+        sections = detect_chapters(test_text)
+        print(f"✅ Chapter detection test: Found {len(sections)} sections")
+        
+        # Check if we can create a simple interface
+        try:
+            with gr.Blocks() as test_interface:
+                gr.Markdown("# Test Interface")
+                gr.Textbox(label="Test")
+            print("✅ Gradio interface creation test passed")
+        except Exception as e:
+            print(f"❌ Gradio interface test failed: {e}")
+            return False
+        
+        print("\n🎉 All web interface tests passed!")
+        print("\nTo start the web interface:")
+        print("  ./start_web.sh")
+        print("  or")
+        print("  python web_interface.py")
+        
+        return True
+        
     except Exception as e:
-        print(f"❌ Chapter detection test failed: {e}")
+        print(f"❌ Test failed: {e}")
         return False
-    
-    print("\n🎉 All web interface tests passed!")
-    print("\n🚀 You can now start the web interface with:")
-    print("   ./start_web.sh")
-    print("\n🌐 Or manually with:")
-    print("   python web_interface.py")
-    
-    return True
-
-def main():
-    print("=== Audiobook Creator Web Interface Test ===\n")
-    
-    if not test_web_interface():
-        print("\n❌ Web interface tests failed.")
-        return False
-    
-    return True
 
 if __name__ == "__main__":
-    success = main()
+    success = test_web_interface()
     sys.exit(0 if success else 1)

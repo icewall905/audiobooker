@@ -14,16 +14,6 @@ curl -sSL https://raw.githubusercontent.com/icewall905/audiobooker/main/setup_ub
 audiobook --document my_book.txt --voice narrator.wav
 ```
 
-### Web Interface (New!)
-
-```bash
-# Start the easy-to-use web interface
-./start_web.sh
-
-# Then open http://localhost:7860 in your browser
-# Upload text, add voice samples, and generate audiobooks with a few clicks!
-```
-
 ### Manual Setup
 
 ```bash
@@ -41,18 +31,35 @@ python app.py --document my_book.txt
 
 ## Features
 
-- 🎯 **Smart Text Processing**: Intelligent sentence-boundary splitting
+- 🎯 **Smart Text Processing**: Intelligent sentence-boundary splitting with chapter detection
 - 🎤 **Voice Consistency**: Maintains natural voice throughout entire audiobooks
+- 🌐 **Web Interface**: Easy-to-use browser-based interface with drag-and-drop
 - 🚀 **GPU Acceleration**: CUDA optimization for faster generation
-- 🔧 **Configurable**: Adjustable voice parameters and quality settings
+- � **Chapter Detection**: Automatic chapter detection with configurable pauses
+- �🔧 **Configurable**: Adjustable voice parameters and quality settings
 - 📊 **Progress Tracking**: Real-time generation progress updates
 - 🛠️ **Production Ready**: Comprehensive error handling and logging
 - 📖 **Multiple Workflows**: Both local and remote API support
+
+## Usage Options
+
+### 🌐 Web Interface (Easiest)
+```bash
+./start_web.sh
+# Open http://localhost:7860 in your browser
+```
+
+### 💻 Command Line
+```bash
+./start.sh
+python app.py --document my_book.txt --voice narrator.wav
+```
 
 ## Documentation
 
 - [Ubuntu Setup Guide](UBUNTU_SETUP.md) - Complete installation instructions
 - [Usage Guide](README_USAGE.md) - Detailed usage examples and options
+- [Web Interface Guide](README_WEB.md) - Browser-based interface documentation
 - [Remote API Guide](README_REMOTE.md) - Using with remote TTS services
 - [Project Summary](PROJECT_SUMMARY.md) - Technical overview and architecture
 
@@ -82,13 +89,6 @@ audiobook --document story.txt --voice narrator.wav --output my_audiobook.wav
 - NVIDIA GPU with CUDA support (recommended)
 - 8GB+ RAM
 - 10GB+ free disk space
-
-## Documentation
-
-- **[Web Interface Guide](README_WEB.md)** - Browser-based interface usage
-- **[Command Line Usage](README_USAGE.md)** - CLI commands and options
-- **[Remote Server Setup](README_REMOTE.md)** - Gradio remote interface
-- **[Ubuntu Installation](UBUNTU_SETUP.md)** - Detailed setup instructions
 
 ## License
 

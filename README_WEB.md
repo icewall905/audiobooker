@@ -1,232 +1,176 @@
-# Web Interface Usage Guide
+# Web Interface Guide
 
-## 🌐 Audiobook Creator Web Interface
+## 🌐 Chatterbox Audiobook Creator Web Interface
 
-The web interface provides an easy-to-use browser-based interface for creating audiobooks without needing to use command line tools.
+The web interface provides an easy-to-use browser-based way to create audiobooks without using the command line.
 
-## 🚀 Quick Start
+### Features
 
-### 1. Start the Web Interface
+- 📝 **Text Input**: Type or paste text directly into the interface
+- 📄 **File Upload**: Upload `.txt` documents 
+- 🎤 **Voice Cloning**: Upload voice samples for personalized narration
+- 📖 **Auto Chapter Detection**: Automatically detects and adds pauses around chapters
+- ⚙️ **Adjustable Settings**: Control speech expressiveness and timing
+- 📊 **Real-time Progress**: See detailed progress and statistics
+- 🎧 **Instant Playback**: Listen to your audiobook immediately
 
-```bash
-# Using the convenient startup script
-./start_web.sh
+### Quick Start
 
-# Or manually
-source audiobooker-env/bin/activate
-python web_interface.py
+1. **Launch the web interface:**
+   ```bash
+   ./start_web.sh
+   ```
+
+2. **Open your browser and go to:**
+   - Local: http://localhost:7860
+   - Network: http://YOUR_SERVER_IP:7860
+
+3. **Create your audiobook:**
+   - Enter text or upload a `.txt` file
+   - Optionally upload a voice sample
+   - Adjust settings if desired
+   - Click "Generate Audiobook"
+
+### Settings Explained
+
+#### Audio Settings
+
+- **Emotion Exaggeration (0.0-1.0)**
+  - `0.0-0.3`: Calm, neutral delivery
+  - `0.4-0.6`: Balanced expression (recommended)
+  - `0.7-1.0`: Very expressive, dramatic delivery
+
+- **CFG Weight (0.0-1.0)**
+  - `0.0-0.3`: Faster, more fluid speech
+  - `0.4-0.6`: Natural pacing (recommended)
+  - `0.7-1.0`: Slower, more deliberate speech
+
+- **Chapter Pause (0.0-5.0 seconds)**
+  - `0.0`: No pauses between chapters
+  - `1.0-2.0`: Natural chapter breaks (recommended)
+  - `3.0-5.0`: Long dramatic pauses
+
+### Voice Cloning
+
+The web interface supports voice cloning with uploaded audio samples:
+
+- **Supported formats**: `.wav`, `.mp3`, `.m4a`, `.flac`
+- **Recommended**: 10-30 seconds of clear speech
+- **Quality tips**:
+  - Use high-quality recordings
+  - Minimize background noise
+  - Single speaker only
+  - Clear, natural speech
+
+### Chapter Detection
+
+The system automatically detects common chapter patterns:
+
+- `Chapter 1`, `Chapter 2`, etc.
+- `CHAPTER 1`, `CHAPTER 2`, etc.
+- `Ch. 1`, `Ch. 2`, etc.
+- `Part 1`, `Part 2`, etc.
+- `Section 1`, `Section 2`, etc.
+- `Book 1`, `Book 2`, etc.
+
+**Chapter Processing:**
+1. Text before chapter title → [pause] → Chapter title → [pause] → Chapter content
+2. Pauses are added both before and after chapter titles
+3. Configurable pause duration
+
+### Example Usage
+
+#### Basic Text Input
+```
+Chapter 1: The Beginning
+
+Once upon a time, in a land far away, there lived a young adventurer named Alex.
+
+Chapter 2: The Journey
+
+Alex set out on a quest to find the legendary crystal of power.
 ```
 
-### 2. Access the Interface
+#### With Voice Sample
+1. Upload your text or document
+2. Upload a voice sample (e.g., `my_voice.wav`)
+3. The system will clone your voice for narration
 
-Open your browser and go to:
-- **Local access:** http://localhost:7860
-- **Network access:** http://YOUR_SERVER_IP:7860
+### Performance Tips
 
-## 📋 Features
+#### GPU vs CPU
+- **GPU (CUDA)**: Much faster generation, recommended for longer texts
+- **CPU**: Slower but works on any system
 
-### Text Input Options
-- **Type directly:** Paste your text into the text box
-- **Upload file:** Upload a .txt file containing your book
+#### Text Length Guidelines
+- **Short texts** (< 1,000 words): Fast generation
+- **Medium texts** (1,000-10,000 words): 5-15 minutes
+- **Long texts** (> 10,000 words): 15+ minutes
 
-### Voice Cloning (Optional)
-- Upload a 5-30 second clear voice sample
-- Supports .wav, .mp3, .m4a, .flac formats
-- Single speaker, clear audio works best
+#### Optimization
+- Use shorter paragraphs for better chunking
+- Clear chapter markers improve structure
+- High-quality voice samples improve cloning
 
-### Generation Settings
-- **Emotion Exaggeration:** 0.0-1.0 (higher = more expressive)
-- **CFG Weight:** 0.0-1.0 (lower = faster speech, higher = more careful)
-- **Chapter Pause:** 0.0-5.0 seconds (pause around chapter titles)
-- **Output Filename:** Name for your audiobook file
+### Troubleshooting
 
-## 🎯 Usage Examples
+#### Common Issues
 
-### Basic Audiobook
-1. Paste or upload your text
-2. Click "Generate Audiobook"
-3. Download the result
+**"Model loading failed"**
+- Ensure you have enough GPU memory (4GB+ recommended)
+- Try restarting the interface
+- Check if CUDA is properly installed
 
-### With Voice Cloning
-1. Upload a clear voice sample (5-30 seconds)
-2. Add your text content
-3. Adjust settings if needed
-4. Generate and download
+**"No audio generated"**
+- Verify your text isn't empty
+- Check for special characters that might cause issues
+- Try with simpler test text first
 
-### Custom Settings
-- **Expressive narration:** Set Exaggeration to 0.7-0.8
-- **Fast reading:** Set CFG Weight to 0.3-0.4
-- **Professional pause:** Set Chapter Pause to 1.5-2.0 seconds
+**"File upload failed"**
+- Ensure file is plain text (.txt)
+- Check file encoding (UTF-8 recommended)
+- Verify file size isn't too large (< 10MB recommended)
 
-## 📚 Chapter Detection
+**Web interface won't start**
+- Run `./setup_ubuntu.sh` to ensure all dependencies are installed
+- Check if port 7860 is already in use
+- Activate the virtual environment manually and try again
 
-The interface automatically detects chapter titles like:
-- Chapter 1: Title
-- CHAPTER 2: Title
-- Ch. 3 Title
-- Part 1: Title
-- Section 1: Title
+### Advanced Usage
 
-**Pauses are automatically added:**
-- Before chapter title (configurable)
-- After chapter title (configurable)
+#### Network Access
+To allow access from other computers on your network:
 
-## 🛠️ Technical Details
+1. Note your server's IP address:
+   ```bash
+   hostname -I
+   ```
 
-### System Requirements
-- Same as command line version
-- Additional: Gradio web framework
-- Recommended: 8GB+ RAM for smooth operation
+2. Access from other devices:
+   ```
+   http://YOUR_SERVER_IP:7860
+   ```
 
-### Performance
-- First generation may take longer (model loading)
-- Subsequent generations are faster
-- GPU acceleration automatically used if available
-
-### File Handling
-- Text files: Auto-detected encoding
-- Audio files: Converted automatically
-- Output: WAV format, 24kHz sample rate
-
-## 🔧 Troubleshooting
-
-### Interface Won't Start
-```bash
-# Check if Gradio is installed
-pip list | grep gradio
-
-# Install if missing
-pip install gradio>=4.0.0
-
-# Check for port conflicts
-netstat -tlnp | grep 7860
+#### Custom Port
+To use a different port, edit `web_interface.py`:
+```python
+interface.launch(server_port=8080)  # Change 7860 to desired port
 ```
 
-### Generation Fails
-- Check that the model loaded successfully in console output
-- Ensure sufficient disk space for output files
-- Verify text content is not empty
-- Check voice file format if using voice cloning
+### API Integration
 
-### Slow Performance
-- Use GPU if available (shows in interface)
-- Reduce text length for testing
-- Close other applications using GPU/RAM
+The web interface runs on Gradio, which automatically provides API endpoints:
 
-### Network Access Issues
-```bash
-# Check firewall settings
-sudo ufw status
+- **API docs**: http://localhost:7860/docs
+- **Direct API calls**: Available for automation
 
-# Allow port 7860 if needed
-sudo ufw allow 7860
+### Support
 
-# Find your server IP
-hostname -I
-```
+If you encounter issues:
 
-## 📱 Mobile Usage
+1. Check the terminal output for error messages
+2. Ensure all dependencies are properly installed
+3. Verify your system meets the requirements
+4. Try with simpler test cases first
 
-The interface is responsive and works on:
-- Tablets and phones
-- Mobile browsers
-- Touch-friendly controls
-- File upload from mobile devices
-
-## 🔒 Security Notes
-
-- Interface runs on local network by default
-- Set `share=True` in code for public links (use carefully)
-- No authentication built-in (add if exposing publicly)
-- Uploaded files are temporary and cleaned up
-
-## 🎨 Customization
-
-You can modify `web_interface.py` to:
-- Change the interface theme
-- Add new settings or controls
-- Modify the layout
-- Add authentication
-- Change default values
-
-## 📊 Monitoring
-
-The interface provides real-time status including:
-- Processing progress
-- Chapter detection results
-- Generation statistics
-- Error messages and troubleshooting
-
-## 🚀 Advanced Usage
-
-### Running as a Service
-
-Create a systemd service for automatic startup:
-
-```bash
-sudo nano /etc/systemd/system/audiobook-web.service
-```
-
-```ini
-[Unit]
-Description=Audiobook Creator Web Interface
-After=network.target
-
-[Service]
-Type=simple
-User=your-username
-WorkingDirectory=/path/to/audiobooker
-Environment=PATH=/path/to/audiobooker/audiobooker-env/bin
-ExecStart=/path/to/audiobooker/audiobooker-env/bin/python web_interface.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable audiobook-web
-sudo systemctl start audiobook-web
-```
-
-### Reverse Proxy Setup
-
-For production deployment behind nginx:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    location / {
-        proxy_pass http://127.0.0.1:7860;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-## 💡 Tips for Best Results
-
-1. **Text Preparation:**
-   - Use clear chapter headings
-   - Remove excessive formatting
-   - Check for typos and formatting issues
-
-2. **Voice Samples:**
-   - 10-20 seconds is optimal
-   - Single speaker only
-   - Clear, uncompressed audio
-   - Consistent tone and pace
-
-3. **Settings:**
-   - Start with defaults
-   - Adjust based on preview results
-   - Save settings that work well for you
-
-4. **Performance:**
-   - Process shorter sections for testing
-   - Use GPU for faster generation
-   - Close unnecessary applications
+For hardware requirements and installation, see the main [README.md](README.md) and [UBUNTU_SETUP.md](UBUNTU_SETUP.md).
