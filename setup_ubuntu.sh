@@ -126,7 +126,7 @@ install_python_deps() {
     pip install chatterbox-tts
     
     # Install additional dependencies
-    pip install numpy requests argparse pathlib
+    pip install numpy requests argparse pathlib gradio
     
     # Install from requirements.txt if it exists
     if [ -f "requirements.txt" ]; then

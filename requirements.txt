@@ -2,3 +2,6 @@
 chatterbox-tts
 torch>=1.13.0
 torchaudio>=0.13.0
+
+# Web interface dependencies
+gradio>=4.0.0

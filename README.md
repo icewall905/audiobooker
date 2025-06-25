@@ -14,6 +14,16 @@ curl -sSL https://raw.githubusercontent.com/icewall905/audiobooker/main/setup_ub
 audiobook --document my_book.txt --voice narrator.wav
 ```
 
+### Web Interface (New!)
+
+```bash
+# Start the easy-to-use web interface
+./start_web.sh
+
+# Then open http://localhost:7860 in your browser
+# Upload text, add voice samples, and generate audiobooks with a few clicks!
+```
+
 ### Manual Setup
 
 ```bash
@@ -72,6 +82,13 @@ audiobook --document story.txt --voice narrator.wav --output my_audiobook.wav
 - NVIDIA GPU with CUDA support (recommended)
 - 8GB+ RAM
 - 10GB+ free disk space
+
+## Documentation
+
+- **[Web Interface Guide](README_WEB.md)** - Browser-based interface usage
+- **[Command Line Usage](README_USAGE.md)** - CLI commands and options
+- **[Remote Server Setup](README_REMOTE.md)** - Gradio remote interface
+- **[Ubuntu Installation](UBUNTU_SETUP.md)** - Detailed setup instructions
 
 ## License
 
