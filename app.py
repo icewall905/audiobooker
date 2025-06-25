@@ -9,6 +9,7 @@ import argparse
 from typing import List, Optional
 
 # --- Configuration ---
+VERSION = "0.0.2"
 DOCUMENT_PATH = "sample_document.txt" 
 VOICE_PROMPT_PATH = None  # Set to your voice reference file path if available
 OUTPUT_PATH = "my_audiobook.wav" 
@@ -214,7 +215,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         total_minutes = total_duration / 60
         total_chars = sum(stat['chars'] for stat in chapter_stats)
         
-        print(f"\n✅ Audiobook creation complete! (v0.0.2)")
+        print(f"\n✅ Audiobook creation complete! (v{VERSION})")
         print(f"📊 Statistics:")
         print(f"   Total chapters: {len(chapters)}")
         print(f"   Total chunks: {total_chunks}")
@@ -264,7 +265,7 @@ def main():
     elif args.no_voice:
         voice_path = None
     
-    print("=== Chatterbox Audiobook Creator v0.0.2 ===")
+    print(f"=== Chatterbox Audiobook Creator v{VERSION} ===")
     print(f"Document: {args.document}")
     print(f"Voice reference: {voice_path if voice_path else 'Default voice'}")
     print(f"Output: {args.output}")
@@ -272,7 +273,7 @@ def main():
     print(f"CFG Weight: {args.cfg_weight}")
     print(f"Device: {args.device}")
     print(f"Chapter pause: {args.chapter_pause}s")
-    print("=" * 45)
+    print("=" * 50)
     
     success = create_audiobook(
         document_path=args.document,
