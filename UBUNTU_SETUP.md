@@ -21,7 +21,7 @@ cd audiobooker
 - ✅ Updates Ubuntu packages
 - ✅ Installs system dependencies (Python, FFmpeg, etc.)
 - ✅ Detects and configures GPU support
-- ✅ Creates virtual environment in `~/audiobooker/`
+- ✅ Creates virtual environment in `./audiobooker/` (current directory)
 - ✅ Installs all Python dependencies
 - ✅ Creates ready-to-use scripts
 - ✅ Adds global launcher command
@@ -29,11 +29,11 @@ cd audiobooker
 
 ### After setup:
 ```bash
-# Use the global launcher (after shell reload)
+# Use the global launcher (audiobook command now available globally)
 audiobook --document my_book.txt --voice narrator.wav
 
 # Or activate and use directly
-cd ~/audiobooker
+cd audiobooker  # In the directory where you ran setup
 source audiobooker-env/bin/activate
 python app.py --document my_book.txt
 ```
@@ -127,9 +127,9 @@ python app.py --help
 
 ## Directory Structure
 
-After full setup:
+After full setup (in your current directory):
 ```
-~/audiobooker/
+./audiobooker/
 ├── audiobooker-env/          # Virtual environment
 ├── app.py                    # Main audiobook creator
 ├── sample_document.txt       # Test document
@@ -188,12 +188,12 @@ The setup script automatically detects GPU and installs appropriate PyTorch vers
 4. **Permission errors**
    ```bash
    # Make sure you own the installation directory
-   sudo chown -R $USER:$USER ~/audiobooker
+   sudo chown -R $USER:$USER ./audiobooker
    ```
 
 ### Testing Installation
 ```bash
-cd ~/audiobooker
+cd audiobooker  # In the directory where you ran setup
 source audiobooker-env/bin/activate
 python test_setup.py
 ```
@@ -218,10 +218,10 @@ To enable automatic voice detection, simply place a file named `example.wav` in 
 
 ```bash
 # Copy your voice sample to the project directory
-cp /path/to/your/voice_sample.wav ~/audiobooker/example.wav
+cp /path/to/your/voice_sample.wav ./audiobooker/example.wav
 
 # Now any audiobook creation without --voice will automatically use example.wav
-cd ~/audiobooker
+cd audiobooker
 source audiobooker-env/bin/activate
 python app.py --document book.txt  # Will automatically use example.wav
 ```

@@ -9,7 +9,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-INSTALL_DIR="$HOME/audiobooker"
+INSTALL_DIR="$(pwd)/audiobooker"
 VENV_NAME="audiobooker-env"
 PYTHON_VERSION="3.8"
 

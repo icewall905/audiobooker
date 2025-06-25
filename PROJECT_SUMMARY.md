@@ -143,7 +143,7 @@ audiobooker/
 
 ### Quick Ubuntu Setup
 ```bash
-# One-command installation
+# One-command installation (installs in current directory)
 curl -sSL https://raw.githubusercontent.com/icewall905/audiobooker/main/setup_ubuntu.sh | bash
 
 # Use globally after setup

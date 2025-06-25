@@ -7,7 +7,7 @@ A robust, production-ready Python application for generating high-quality audiob
 ### Ubuntu Server Setup (Recommended)
 
 ```bash
-# One-command setup - creates everything you need
+# One-command setup - creates everything you need in current directory
 curl -sSL https://raw.githubusercontent.com/icewall905/audiobooker/main/setup_ubuntu.sh | bash
 
 # After setup, use anywhere:
