@@ -1,5 +1,8 @@
 # Audiobook Creator Project Summary
 
+## Repository
+**GitHub**: https://github.com/icewall905/audiobooker
+
 ## Overview
 
 You now have a complete audiobook creation system with two approaches:
@@ -134,6 +137,31 @@ audiobooker/
 ├── test_*.py             # Test scripts
 ├── README_*.md           # Documentation
 └── venv/                 # Virtual environment
+```
+
+## Installation
+
+### Quick Ubuntu Setup
+```bash
+# One-command installation
+curl -sSL https://raw.githubusercontent.com/icewall905/audiobooker/main/setup_ubuntu.sh | bash
+
+# Use globally after setup
+audiobook --document my_book.txt --voice narrator.wav
+```
+
+### Manual Installation
+```bash
+# Clone repository
+git clone https://github.com/icewall905/audiobooker.git
+cd audiobooker
+
+# Quick setup
+./quick_setup.sh
+
+# Use with virtual environment
+source audiobooker-env/bin/activate
+python app.py --document my_book.txt
 ```
 
 ## Success Criteria
