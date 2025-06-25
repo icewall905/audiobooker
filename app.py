@@ -16,8 +16,8 @@ OUTPUT_PATH = "my_audiobook.wav"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_CHUNK_LENGTH = 300
 
-def detect_chapters(text: str) -> List[str]:
-    """Detect chapters in text based on common patterns."""
+def detect_chapters(text: str) -> List[dict]:
+    """Detect chapters in text and return structured data with pause information."""
     # Common chapter patterns
     chapter_patterns = [
         r'^\s*Chapter\s+\d+',
@@ -31,25 +31,53 @@ def detect_chapters(text: str) -> List[str]:
     ]
     
     lines = text.split('\n')
-    chapter_indices = [0]  # Always start with beginning
+    chapter_indices = []
     
     for i, line in enumerate(lines):
         for pattern in chapter_patterns:
             if re.match(pattern, line.strip(), re.IGNORECASE):
-                if i not in chapter_indices:
-                    chapter_indices.append(i)
+                chapter_indices.append(i)
                 break
     
-    # Split text into chapters
-    chapters = []
-    for i in range(len(chapter_indices)):
-        start_idx = chapter_indices[i]
-        end_idx = chapter_indices[i + 1] if i + 1 < len(chapter_indices) else len(lines)
-        chapter_text = '\n'.join(lines[start_idx:end_idx]).strip()
-        if chapter_text:
-            chapters.append(chapter_text)
+    # If no chapters found, return the whole text as one chapter
+    if not chapter_indices:
+        return [{'text': text, 'is_chapter_title': False}]
     
-    return chapters if len(chapters) > 1 else [text]
+    # Split text into sections with chapter information
+    sections = []
+    current_start = 0
+    
+    for chapter_idx in chapter_indices:
+        # Add content before chapter (if any)
+        if chapter_idx > current_start:
+            pre_chapter_text = '\n'.join(lines[current_start:chapter_idx]).strip()
+            if pre_chapter_text:
+                sections.append({'text': pre_chapter_text, 'is_chapter_title': False})
+        
+        # Add chapter title line
+        chapter_title = lines[chapter_idx].strip()
+        if chapter_title:
+            sections.append({'text': chapter_title, 'is_chapter_title': True})
+        
+        # Find the end of this chapter's content
+        next_chapter_idx = None
+        for next_idx in chapter_indices:
+            if next_idx > chapter_idx:
+                next_chapter_idx = next_idx
+                break
+        
+        # Add chapter content
+        content_start = chapter_idx + 1
+        content_end = next_chapter_idx if next_chapter_idx else len(lines)
+        
+        if content_start < content_end:
+            chapter_content = '\n'.join(lines[content_start:content_end]).strip()
+            if chapter_content:
+                sections.append({'text': chapter_content, 'is_chapter_title': False})
+        
+        current_start = next_chapter_idx if next_chapter_idx else len(lines)
+    
+    return sections
 
 def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
     """Intelligently split text into chunks, respecting sentence boundaries."""
@@ -125,76 +153,117 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         print(f"Error reading file: {e}")
         return False
 
-    # Detect chapters
-    chapters = detect_chapters(full_text)
-    print(f"Detected {len(chapters)} chapter(s)")
+    # Detect chapters and sections
+    sections = detect_chapters(full_text)
+    chapter_count = sum(1 for section in sections if section['is_chapter_title'])
+    print(f"Detected {len(sections)} sections ({chapter_count} chapter titles)")
 
-    # Process each chapter
+    # Process each section
     all_audio_chunks = []
     total_chunks = 0
     chapter_stats = []
+    current_chapter = 0
     
-    for chapter_idx, chapter_text in enumerate(chapters, 1):
-        print(f"\n--- Processing Chapter {chapter_idx}/{len(chapters)} ---")
+    for section_idx, section_data in enumerate(sections):
+        section_text = section_data['text']
+        is_chapter_title = section_data['is_chapter_title']
         
-        # Split chapter into chunks
-        text_chunks = smart_text_split(chapter_text, max_length=MAX_CHUNK_LENGTH)
-        total_chunks += len(text_chunks)
-        print(f"Chapter {chapter_idx} split into {len(text_chunks)} chunks.")
-        
-        if not text_chunks:
-            print(f"No text found in chapter {chapter_idx}.")
-            continue
-
-        # Synthesize each chunk in the chapter
-        chapter_audio_chunks = []
-        print(f"Generating audio for chapter {chapter_idx}...")
-        
-        for i, chunk in enumerate(text_chunks, 1):
-            print(f"  Chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
+        if is_chapter_title:
+            current_chapter += 1
+            print(f"\n🎯 Processing Chapter Title {current_chapter}: '{section_text[:50]}...'")
+            
+            # Add pause BEFORE chapter title (except for very first section)
+            if section_idx > 0 and chapter_pause > 0:
+                pause_samples = int(chapter_pause * model.sr)
+                pause_audio = torch.zeros(pause_samples)
+                all_audio_chunks.append(pause_audio)
+                print(f"  Added {chapter_pause}s pause before chapter title")
+            
+            # Generate audio for chapter title
             try:
                 if voice_prompt_path:
                     wav = model.generate(
-                        chunk,
+                        section_text,
                         audio_prompt_path=voice_prompt_path,
                         exaggeration=exaggeration,
                         cfg_weight=cfg_weight
                     )
                 else:
                     wav = model.generate(
-                        chunk,
+                        section_text,
                         exaggeration=exaggeration,
                         cfg_weight=cfg_weight
                     )
                 
-                chapter_audio_chunks.append(wav.squeeze(0).cpu())
+                all_audio_chunks.append(wav.squeeze(0).cpu())
+                print(f"  Generated audio for chapter title ({len(section_text)} chars)")
                 
             except Exception as e:
-                print(f"  Error generating audio for chunk {i}: {e}")
+                print(f"  Error generating audio for chapter title: {e}")
                 continue
-
-        if chapter_audio_chunks:
-            # Concatenate chapter audio
-            chapter_audio = torch.cat(chapter_audio_chunks)
-            all_audio_chunks.append(chapter_audio)
             
-            # Calculate chapter statistics
-            chapter_duration = len(chapter_audio) / model.sr
-            chapter_stats.append({
-                'chapter': chapter_idx,
-                'chunks': len(text_chunks),
-                'duration': chapter_duration,
-                'chars': len(chapter_text)
-            })
-            
-            print(f"Chapter {chapter_idx} complete: {chapter_duration:.1f}s")
-            
-            # Add pause between chapters (except for the last one)
-            if chapter_idx < len(chapters) and chapter_pause > 0:
+            # Add pause AFTER chapter title
+            if chapter_pause > 0:
                 pause_samples = int(chapter_pause * model.sr)
                 pause_audio = torch.zeros(pause_samples)
                 all_audio_chunks.append(pause_audio)
-                print(f"Added {chapter_pause}s pause after chapter {chapter_idx}")
+                print(f"  Added {chapter_pause}s pause after chapter title")
+                
+        else:
+            # Regular content section
+            print(f"\n--- Processing Content Section {section_idx + 1}/{len(sections)} ---")
+            
+            # Split section into chunks
+            text_chunks = smart_text_split(section_text, max_length=MAX_CHUNK_LENGTH)
+            total_chunks += len(text_chunks)
+            print(f"Section split into {len(text_chunks)} chunks.")
+            
+            if not text_chunks:
+                print(f"No text found in section.")
+                continue
+
+            # Synthesize each chunk in the section
+            section_audio_chunks = []
+            
+            for i, chunk in enumerate(text_chunks, 1):
+                print(f"  Chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
+                try:
+                    if voice_prompt_path:
+                        wav = model.generate(
+                            chunk,
+                            audio_prompt_path=voice_prompt_path,
+                            exaggeration=exaggeration,
+                            cfg_weight=cfg_weight
+                        )
+                    else:
+                        wav = model.generate(
+                            chunk,
+                            exaggeration=exaggeration,
+                            cfg_weight=cfg_weight
+                        )
+                    
+                    section_audio_chunks.append(wav.squeeze(0).cpu())
+                    
+                except Exception as e:
+                    print(f"  Error generating audio for chunk {i}: {e}")
+                    continue
+
+            if section_audio_chunks:
+                # Concatenate section audio
+                section_audio = torch.cat(section_audio_chunks)
+                all_audio_chunks.append(section_audio)
+                
+                # Calculate section statistics
+                section_duration = len(section_audio) / model.sr
+                chapter_stats.append({
+                    'section': section_idx + 1,
+                    'is_chapter_title': is_chapter_title,
+                    'chunks': len(text_chunks),
+                    'duration': section_duration,
+                    'chars': len(section_text)
+                })
+                
+                print(f"Section complete: {section_duration:.1f}s")
 
     # Final concatenation and save
     if not all_audio_chunks:
@@ -217,17 +286,19 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         
         print(f"\n✅ Audiobook creation complete! (v{VERSION})")
         print(f"📊 Statistics:")
-        print(f"   Total chapters: {len(chapters)}")
+        print(f"   Total sections: {len(sections)}")
+        print(f"   Chapter titles: {chapter_count}")
         print(f"   Total chunks: {total_chunks}")
         print(f"   Total characters: {total_chars:,}")
         print(f"   Total duration: {total_minutes:.1f} minutes ({total_duration:.1f} seconds)")
         print(f"   Average speaking rate: {total_chars / total_duration:.1f} chars/second")
         print(f"   Output file: {output_path}")
         
-        if len(chapters) > 1:
-            print(f"\n📖 Chapter breakdown:")
+        if chapter_count > 0:
+            print(f"\n📖 Section breakdown:")
             for stat in chapter_stats:
-                print(f"   Chapter {stat['chapter']}: {stat['duration']:.1f}s ({stat['chunks']} chunks, {stat['chars']:,} chars)")
+                section_type = "Chapter Title" if stat['is_chapter_title'] else "Content"
+                print(f"   Section {stat['section']} ({section_type}): {stat['duration']:.1f}s ({stat['chunks']} chunks, {stat['chars']:,} chars)")
         
         return True
         
