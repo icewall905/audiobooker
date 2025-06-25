@@ -137,10 +137,16 @@ install_python_deps() {
 
 # Download audiobook creator scripts
 download_scripts() {
-    print_status "Creating audiobook creator scripts..."
+    print_status "Setting up audiobook creator scripts..."
     
-    # Create the main app.py script
-    cat > app.py << 'EOF'
+    # Check if we're in a git repository with existing files
+    if [ -f "app.py" ] && [ -d ".git" ]; then
+        print_status "Found existing app.py in git repository - using existing file ✓"
+        print_status "This preserves any local customizations and latest features"
+    else
+        print_status "Creating app.py script..."
+        # Create the main app.py script only if it doesn't exist or we're not in a git repo
+        cat > app.py << 'EOF'
 import torch
 import torchaudio as ta
 from chatterbox.tts import ChatterboxTTS
@@ -344,8 +350,11 @@ def main():
 if __name__ == "__main__":
     main()
 EOF
-
-    # Create sample document
+    fi
+    
+    # Create sample document (only if it doesn't exist)
+    if [ ! -f "sample_document.txt" ]; then
+        print_status "Creating sample document..."
     cat > sample_document.txt << 'EOF'
 Chapter 1: The Beginning
 
@@ -367,8 +376,13 @@ The more she read, the more she began to notice strange coincidences in her dail
 
 And so began Sarah's journey into a world where the boundaries between story and reality were far more fluid than she had ever imagined possible.
 EOF
+    else
+        print_status "Found existing sample_document.txt - keeping existing file ✓"
+    fi
 
-    # Create test script
+    # Create test script (only if it doesn't exist)
+    if [ ! -f "test_setup.py" ]; then
+        print_status "Creating test script..."
     cat > test_setup.py << 'EOF'
 #!/usr/bin/env python3
 """Test script to verify the audiobook creator setup."""
@@ -442,11 +456,14 @@ if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
 EOF
+        chmod +x test_setup.py
+    else
+        print_status "Found existing test_setup.py - keeping existing file ✓"
+    fi
 
-    # Make scripts executable
-    chmod +x test_setup.py
-    
-    # Create start script for easy usage
+    # Create start script for easy usage (only if it doesn't exist)
+    if [ ! -f "start.sh" ]; then
+        print_status "Creating start script..."
     cat > start.sh << 'EOF'
 #!/bin/bash
 
@@ -563,8 +580,10 @@ echo -e "${BLUE}   Current directory: $CURRENT_DIR${NC}"
 echo -e "${BLUE}   Virtual env: $VENV_DIR${NC}"
 echo ""
 EOF
-    
-    chmod +x start.sh
+        chmod +x start.sh
+    else
+        print_status "Found existing start.sh - keeping existing file ✓"
+    fi
 }
 
 # Create launcher script
