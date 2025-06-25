@@ -1,0 +1,5 @@
+#!/bin/bash
+# Audiobook Creator Launcher
+cd "/home/hnyg/git/audiobooker/audiobooker"
+source "audiobooker-env/bin/activate"
+python app.py "$@"

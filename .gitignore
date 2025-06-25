@@ -127,6 +127,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+audiobooker-env/
 
 # Spyder project settings
 .spyderproject
@@ -228,3 +229,5 @@ gradio_cached_examples/
 # Debug files
 debug_*.py
 temp_*.py
+
+
