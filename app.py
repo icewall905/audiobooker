@@ -23,41 +23,73 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # The generate() function works best with shorter chunks (around 300 chars)
 MAX_CHUNK_LENGTH = 300
 
-def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
+def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[dict]:
     """
     Intelligently split text into chunks, respecting sentence boundaries
-    and keeping chunks under the specified length.
+    and keeping chunks under the specified length. Returns list of dicts
+    with 'text' and 'is_chapter_start' keys.
     """
     # First split by paragraphs
     paragraphs = re.split(r'\n\s*\n', text)
     chunks = []
     
+    # Pattern to detect chapter starts (case insensitive)
+    chapter_pattern = re.compile(r'^\s*(chapter\s+\d+|chapter\s+[ivxlcdm]+)\s*[:.]?\s*', re.IGNORECASE)
+    
     for paragraph in paragraphs:
         paragraph = paragraph.strip()
         if not paragraph:
             continue
+        
+        # Check if this paragraph starts a new chapter
+        is_chapter_start = bool(chapter_pattern.match(paragraph))
             
         # If paragraph is short enough, use it as-is
         if len(paragraph) <= max_length:
-            chunks.append(paragraph)
+            chunks.append({
+                'text': paragraph,
+                'is_chapter_start': is_chapter_start
+            })
         else:
             # Split long paragraphs by sentences
             sentences = re.split(r'(?<=[.!?])\s+', paragraph)
             current_chunk = ""
+            first_chunk = True
             
             for sentence in sentences:
                 # If adding this sentence would exceed max_length, save current chunk
                 if current_chunk and len(current_chunk + " " + sentence) > max_length:
-                    chunks.append(current_chunk.strip())
+                    chunks.append({
+                        'text': current_chunk.strip(),
+                        'is_chapter_start': is_chapter_start and first_chunk
+                    })
                     current_chunk = sentence
+                    first_chunk = False
                 else:
                     current_chunk = current_chunk + " " + sentence if current_chunk else sentence
             
             # Add any remaining text
             if current_chunk.strip():
-                chunks.append(current_chunk.strip())
+                chunks.append({
+                    'text': current_chunk.strip(),
+                    'is_chapter_start': is_chapter_start and first_chunk
+                })
     
     return chunks
+
+def create_silence(duration_seconds: float, sample_rate: int = 24000) -> torch.Tensor:
+    """
+    Create a tensor of silence with the specified duration.
+    
+    Args:
+        duration_seconds: Duration of silence in seconds
+        sample_rate: Sample rate in Hz (default: 24000 for ChatterboxTTS)
+    
+    Returns:
+        Tensor of zeros representing silence
+    """
+    num_samples = int(duration_seconds * sample_rate)
+    return torch.zeros(num_samples)
 
 def validate_inputs(document_path: str, voice_prompt_path: Optional[str] = None) -> bool:
     """Validate that required input files exist."""
@@ -76,7 +108,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                    output_path: str = OUTPUT_PATH,
                    exaggeration: float = 0.5,
                    cfg_weight: float = 0.5,
-                   device: str = DEVICE):
+                   device: str = DEVICE,
+                   chapter_pause_seconds: float = 2.0):
     """
     Loads a document, splits it into paragraphs, synthesizes each paragraph
     to audio using a consistent voice, and combines them into a single file.
@@ -88,6 +121,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
         exaggeration: Emotion exaggeration control (0.0-1.0)
         cfg_weight: CFG weight for generation quality (0.0-1.0)
         device: Device to use for inference
+        chapter_pause_seconds: Extra pause duration before new chapters (default: 2.0)
     """
     # Validate inputs
     if not validate_inputs(document_path, voice_prompt_path):
@@ -121,6 +155,11 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     text_chunks = smart_text_split(full_text, max_length=MAX_CHUNK_LENGTH)
     print(f"Document split into {len(text_chunks)} chunks.")
     
+    # Count chapters for better progress reporting
+    chapter_count = sum(1 for chunk in text_chunks if chunk['is_chapter_start'])
+    if chapter_count > 0:
+        print(f"Detected {chapter_count} chapters with {chapter_pause_seconds}s pauses between them.")
+    
     if not text_chunks:
         print("No text found in document.")
         return False
@@ -129,8 +168,17 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     audio_chunks = []
     print("Starting audio generation for each chunk...")
     
-    for i, chunk in enumerate(text_chunks, 1):
-        print(f"Generating audio for chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
+    for i, chunk_data in enumerate(text_chunks, 1):
+        chunk_text = chunk_data['text']
+        is_chapter_start = chunk_data['is_chapter_start']
+        
+        # Add chapter pause before new chapters (except the very first chunk)
+        if is_chapter_start and i > 1:
+            print(f"Adding {chapter_pause_seconds}s chapter pause...")
+            chapter_silence = create_silence(chapter_pause_seconds, sample_rate=24000)
+            audio_chunks.append(chapter_silence)
+        
+        print(f"Generating audio for chunk {i}/{len(text_chunks)} ({len(chunk_text)} chars){'[CHAPTER START]' if is_chapter_start else ''}...")
         try:
             # *** CRITICAL: Use the SAME voice_prompt_path for every chunk ***
             # This ensures voice consistency throughout the audiobook
@@ -139,7 +187,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             if voice_prompt_path:
                 # With voice cloning
                 wav = model.generate(
-                    chunk,
+                    chunk_text,
                     audio_prompt_path=voice_prompt_path,
                     exaggeration=exaggeration,
                     cfg_weight=cfg_weight
@@ -147,7 +195,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             else:
                 # With default voice
                 wav = model.generate(
-                    chunk,
+                    chunk_text,
                     exaggeration=exaggeration,
                     cfg_weight=cfg_weight
                 )
@@ -157,7 +205,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             
         except Exception as e:
             print(f"Error generating audio for chunk {i}: {e}")
-            print(f"Chunk content preview: {chunk[:100]}...")
+            print(f"Chunk content preview: {chunk_text[:100]}...")
             # Continue with next chunk instead of failing completely
             continue
 
@@ -205,6 +253,8 @@ def main():
                        help="Emotion exaggeration (0.0-1.0, default: 0.5)")
     parser.add_argument("--cfg-weight", "-c", type=float, default=0.5,
                        help="CFG weight (0.0-1.0, default: 0.5)")
+    parser.add_argument("--chapter-pause", "-p", type=float, default=2.0,
+                       help="Extra pause in seconds before new chapters (default: 2.0)")
     parser.add_argument("--device", default=DEVICE,
                        help="Device to use (cuda/cpu)")
     parser.add_argument("--no-voice", action="store_true",
@@ -221,6 +271,7 @@ def main():
     print(f"Output: {args.output}")
     print(f"Exaggeration: {args.exaggeration}")
     print(f"CFG Weight: {args.cfg_weight}")
+    print(f"Chapter pause: {args.chapter_pause}s")
     print(f"Device: {args.device}")
     print("=" * 35)
     
@@ -230,7 +281,8 @@ def main():
         output_path=args.output,
         exaggeration=args.exaggeration,
         cfg_weight=args.cfg_weight,
-        device=args.device
+        device=args.device,
+        chapter_pause_seconds=args.chapter_pause
     )
     
     if success:

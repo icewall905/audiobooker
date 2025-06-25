@@ -107,6 +107,9 @@ python app.py --document "my_book.txt"  # Will automatically use example.wav if 
 # Expressive narration
 python app.py --document "drama.txt" --exaggeration 0.7 --cfg-weight 0.3
 
+# Custom chapter pauses (default is 2 seconds)
+python app.py --document "book.txt" --chapter-pause 3.0
+
 # Custom output location
 python app.py --document "book.txt" --output "/path/to/audiobooks/my_book.wav"
 

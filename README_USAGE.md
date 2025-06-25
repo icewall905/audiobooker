@@ -46,6 +46,7 @@ python app.py --document "path/to/your/book.txt" --voice "path/to/voice.wav" --o
 - `--output, -o`: Path for the output audiobook file
 - `--exaggeration, -e`: Emotion exaggeration level (0.0-1.0, default: 0.5)
 - `--cfg-weight, -c`: CFG weight for generation quality (0.0-1.0, default: 0.5)
+- `--chapter-pause, -p`: Extra pause in seconds before new chapters (default: 2.0)
 - `--device`: Device to use (cuda/cpu, auto-detected by default)
 - `--no-voice`: Use default voice instead of voice reference
 
@@ -61,7 +62,12 @@ python app.py --document "novel.txt" --voice "narrator.wav"
 python app.py --document "drama.txt" --exaggeration 0.7 --cfg-weight 0.3
 ```
 
-3. **Using default voice:**
+3. **Custom chapter pauses:**
+```bash
+python app.py --document "book.txt" --chapter-pause 3.0
+```
+
+4. **Using default voice:**
 ```bash
 python app.py --document "book.txt" --no-voice
 ```
