@@ -89,6 +89,9 @@ python app.py --document "my_book.txt"
 
 # Create audiobook with voice cloning
 python app.py --document "my_book.txt" --voice "narrator_voice.wav"
+
+# Auto voice detection (place 'example.wav' in project directory)
+python app.py --document "my_book.txt"  # Will automatically use example.wav if found
 ```
 
 ### Advanced Usage
@@ -116,6 +119,7 @@ python app.py --help
 - **Length**: 10-30 seconds recommended
 - **Quality**: High quality, single speaker, minimal background noise
 - **Location**: Anywhere accessible to the script
+- **Auto-detection**: Place a file named `example.wav` in the project directory for automatic voice detection
 
 ### Output
 - **Format**: WAV file (24kHz sample rate)
@@ -130,7 +134,8 @@ After full setup:
 ├── app.py                    # Main audiobook creator
 ├── sample_document.txt       # Test document
 ├── test_setup.py            # Installation test
-└── audiobook                # Global launcher script
+├── audiobook                # Global launcher script
+└── example.wav              # Optional: Auto-detected voice reference
 ```
 
 ## GPU Requirements
@@ -206,6 +211,19 @@ Your existing Gradio server (`10.0.10.23:7860`) can run alongside this setup:
 for book in *.txt; do
     python app.py --document "$book" --output "audiobooks/${book%.txt}.wav"
 done
+```
+
+### Using Auto Voice Detection
+To enable automatic voice detection, simply place a file named `example.wav` in your project directory:
+
+```bash
+# Copy your voice sample to the project directory
+cp /path/to/your/voice_sample.wav ~/audiobooker/example.wav
+
+# Now any audiobook creation without --voice will automatically use example.wav
+cd ~/audiobooker
+source audiobooker-env/bin/activate
+python app.py --document book.txt  # Will automatically use example.wav
 ```
 
 ## Next Steps

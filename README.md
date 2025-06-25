@@ -55,6 +55,9 @@ python app.py --document book.txt
 # With custom voice and settings
 python app.py --document novel.txt --voice speaker.wav --exaggeration 1.2 --cfg-weight 1.0
 
+# Auto voice detection (place 'example.wav' in project directory)
+python app.py --document story.txt  # Automatically uses example.wav if found
+
 # Using global launcher (after Ubuntu setup)
 audiobook --document story.txt --voice narrator.wav --output my_audiobook.wav
 ```

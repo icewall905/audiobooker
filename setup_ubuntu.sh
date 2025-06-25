@@ -304,7 +304,13 @@ def main():
     
     args = parser.parse_args()
     
-    voice_path = None if args.no_voice else args.voice
+    # Auto-detect example.wav if no voice specified and file exists
+    voice_path = args.voice
+    if not args.no_voice and not voice_path and os.path.exists("example.wav"):
+        voice_path = "example.wav"
+        print("🎤 Automatically detected and using example.wav as voice reference")
+    elif args.no_voice:
+        voice_path = None
     
     print("=== Chatterbox Audiobook Creator ===")
     print(f"Document: {args.document}")
@@ -493,13 +499,23 @@ print_usage() {
     echo "  # Use voice cloning"
     echo "  python app.py --document book.txt --voice narrator.wav"
     echo ""
+    echo "  # Auto voice detection (place 'example.wav' in project folder)"
+    echo "  python app.py --document book.txt  # Will auto-use example.wav if found"
+    echo ""
     echo "  # Expressive narration"
     echo "  python app.py --exaggeration 0.7 --cfg-weight 0.3"
     echo ""
-    echo -e "${BLUE}Global launcher (after restart/reload):${NC}"
+    echo -e "${BLUE}Global launcher:${NC}"
     echo "  audiobook --document book.txt --voice narrator.wav"
     echo ""
-    echo -e "${YELLOW}Note:${NC} Reload your shell or run 'source ~/.bashrc' to use the global launcher"
+    echo -e "${YELLOW}Reloading shell to enable global launcher...${NC}"
+    # Reload bash configuration
+    if [ -f ~/.bashrc ]; then
+        source ~/.bashrc
+        echo -e "${GREEN}✅ Shell reloaded! Global launcher is now available.${NC}"
+    else
+        echo -e "${YELLOW}Note: Restart your terminal or run 'source ~/.bashrc' to use the global launcher${NC}"
+    fi
 }
 
 # Main execution
@@ -520,4 +536,3 @@ main() {
 
 # Run main function
 main
-EOF
