@@ -9,6 +9,12 @@ echo "=== Quick Audiobook Creator Setup ==="
 python3 -m venv audiobooker-env
 source audiobooker-env/bin/activate
 
+# Create python symlink if it doesn't exist
+if [ ! -f "audiobooker-env/bin/python" ] && [ -f "audiobooker-env/bin/python3" ]; then
+    echo "Creating python symlink..."
+    ln -sf python3 audiobooker-env/bin/python
+fi
+
 # Install dependencies
 pip install --upgrade pip
 
@@ -30,3 +36,11 @@ echo ""
 echo "To use:"
 echo "  source audiobooker-env/bin/activate"
 echo "  python app.py --document your_book.txt"
+echo ""
+echo "Or use the startup script:"
+echo "  ./start.sh"
+echo ""
+echo "Default behavior:"
+echo "  • Splits chapters into separate files"
+echo "  • Converts to MP3 format"
+echo "  • Saves files in ./output/ directory"

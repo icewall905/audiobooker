@@ -40,6 +40,24 @@ else
     exit 1
 fi
 
+# Check and fix Python executable
+echo -e "${CYAN}🔍 Checking Python executable...${NC}"
+if command -v python &> /dev/null; then
+    echo -e "${GREEN}✅ Python executable found${NC}"
+    PYTHON_CMD="python"
+elif command -v python3 &> /dev/null; then
+    echo -e "${YELLOW}⚠️  Only python3 found, creating python symlink...${NC}"
+    # Create python symlink in virtual environment if it doesn't exist
+    if [ ! -f "$VENV_DIR/bin/python" ] && [ -f "$VENV_DIR/bin/python3" ]; then
+        ln -sf python3 "$VENV_DIR/bin/python"
+        echo -e "${GREEN}✅ Created python symlink${NC}"
+    fi
+    PYTHON_CMD="python3"
+else
+    echo -e "${RED}❌ No Python executable found${NC}"
+    exit 1
+fi
+
 # Check if app.py exists
 if [ ! -f "app.py" ]; then
     echo -e "${RED}❌ app.py not found in current directory${NC}"
@@ -85,23 +103,28 @@ echo ""
 echo -e "${CYAN}🚀 Usage Examples:${NC}"
 echo ""
 echo -e "${GREEN}Basic Usage:${NC}"
-echo "  python app.py                                          # Uses sample_document.txt$AUTO_VOICE"
-echo "  python app.py --document book.txt                      # Use specific document$AUTO_VOICE"
+echo "  $PYTHON_CMD app.py                                          # Uses sample_document.txt$AUTO_VOICE"
+echo "  $PYTHON_CMD app.py --document book.txt                      # Use specific document$AUTO_VOICE"
 echo ""
 echo -e "${GREEN}Voice Cloning:${NC}"
-echo "  python app.py --document book.txt --voice narrator.wav # Use specific voice"
-echo "  python app.py --document book.txt --no-voice          # Force default voice (ignore example.wav)"
+echo "  $PYTHON_CMD app.py --document book.txt --voice narrator.wav # Use specific voice"
+echo "  $PYTHON_CMD app.py --document book.txt --no-voice          # Force default voice (ignore example.wav)"
 echo ""
 echo -e "${GREEN}Advanced Settings:${NC}"
-echo "  python app.py --document book.txt --exaggeration 0.7  # More expressive"
-echo "  python app.py --document book.txt --cfg-weight 0.3    # Faster speech"
-echo "  python app.py --document book.txt --output my_book.wav # Custom output file"
+echo "  $PYTHON_CMD app.py --document book.txt --exaggeration 0.7  # More expressive"
+echo "  $PYTHON_CMD app.py --document book.txt --cfg-weight 0.3    # Faster speech"
+echo "  $PYTHON_CMD app.py --document book.txt --output output/my_book.wav # Custom output file"
+echo ""
+echo -e "${GREEN}Chapter Splitting (Default):${NC}"
+echo "  $PYTHON_CMD app.py --document book.txt                      # Split chapters + MP3 (default)"
+echo "  $PYTHON_CMD app.py --document book.txt --no-split-chapters  # Single file"
+echo "  $PYTHON_CMD app.py --document book.txt --no-mp3             # WAV format only"
 echo ""
 echo -e "${GREEN}Global Launcher (if available):${NC}"
 echo "  audiobook --document book.txt --voice narrator.wav    # Use from anywhere"
 echo ""
 echo -e "${CYAN}📋 Quick Commands:${NC}"
-echo "  python app.py --help                                  # Show all options"
+echo "  $PYTHON_CMD app.py --help                                  # Show all options"
 echo "  deactivate                                             # Exit virtual environment"
 echo ""
 echo -e "${YELLOW}💡 Tip: Press Ctrl+C to stop generation if needed${NC}"
@@ -111,4 +134,5 @@ echo ""
 echo -e "${GREEN}🎯 Environment is now active! You can run the commands above.${NC}"
 echo -e "${BLUE}   Current directory: $CURRENT_DIR${NC}"
 echo -e "${BLUE}   Virtual env: $VENV_DIR${NC}"
+echo -e "${BLUE}   Python command: $PYTHON_CMD${NC}"
 echo ""
