@@ -21,7 +21,7 @@ cd audiobooker
 - ✅ Updates Ubuntu packages
 - ✅ Installs system dependencies (Python, FFmpeg, etc.)
 - ✅ Detects and configures GPU support
-- ✅ Creates virtual environment in `./audiobooker/` (current directory)
+- ✅ Creates virtual environment (in current directory if repo exists, otherwise in `./audiobooker/`)
 - ✅ Installs all Python dependencies
 - ✅ Creates ready-to-use scripts
 - ✅ Adds global launcher command
@@ -29,11 +29,19 @@ cd audiobooker
 
 ### After setup:
 ```bash
+# Use the convenient start script (recommended for beginners)
+./start.sh
+
 # Use the global launcher (audiobook command now available globally)
 audiobook --document my_book.txt --voice narrator.wav
 
 # Or activate and use directly
-cd audiobooker  # In the directory where you ran setup
+# If you ran setup from the cloned repo directory:
+source audiobooker-env/bin/activate
+python app.py --document my_book.txt
+
+# If you ran setup from an empty directory:
+cd audiobooker
 source audiobooker-env/bin/activate
 python app.py --document my_book.txt
 ```
@@ -127,13 +135,25 @@ python app.py --help
 
 ## Directory Structure
 
-After full setup (in your current directory):
+After full setup:
+- **If run from cloned repo**: Virtual environment and scripts are in the current directory
+- **If run from empty directory**: Creates `./audiobooker/` subdirectory
+
 ```
+# From cloned repo:
+./
+├── audiobooker-env/          # Virtual environment
+├── app.py                    # Main audiobook creator (existing)
+├── sample_document.txt       # Test document (existing)
+├── start.sh                  # Convenient startup script (new)
+├── audiobook                # Global launcher script (new)
+└── example.wav              # Optional: Auto-detected voice reference
+
+# From empty directory:
 ./audiobooker/
 ├── audiobooker-env/          # Virtual environment
 ├── app.py                    # Main audiobook creator
 ├── sample_document.txt       # Test document
-├── test_setup.py            # Installation test
 ├── audiobook                # Global launcher script
 └── example.wav              # Optional: Auto-detected voice reference
 ```

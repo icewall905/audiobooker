@@ -49,6 +49,9 @@ python app.py --document my_book.txt
 ## Quick Examples
 
 ```bash
+# Easy start with guided interface
+./start.sh
+
 # Basic audiobook generation
 python app.py --document book.txt
 
