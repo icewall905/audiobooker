@@ -243,8 +243,8 @@ def main():
                        help="CFG weight (0.0-1.0, default: 0.5)")
     parser.add_argument("--device", default=DEVICE,
                        help="Device to use (cuda/cpu)")
-    parser.add_argument("--chapter-pause", type=float, default=2.0,
-                       help="Pause duration between chapters in seconds (default: 2.0)")
+    parser.add_argument("--chapter-pause", type=float, default=1.0,
+                       help="Pause duration between chapters in seconds (default: 1.0)")
     parser.add_argument("--no-voice", action="store_true",
                        help="Don't use voice reference (use default voice)")
     
