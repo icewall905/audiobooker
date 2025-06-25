@@ -14,6 +14,16 @@ A robust, production-ready Python application for generating high-quality audiob
 python app.py --document my_book.txt
 ```
 
+### Direct Command Execution
+
+```bash
+# Run a command immediately after setup
+./start.sh --run --document my_book.txt
+
+# Or use the wrapper script
+./audiobook_run.sh --document my_book.txt
+```
+
 ### Ubuntu Server Setup (Alternative)
 
 ```bash

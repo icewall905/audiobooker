@@ -15,6 +15,13 @@ NC='\033[0m' # No Color
 VENV_DIR="audiobooker-env"
 CURRENT_DIR=$(pwd)
 
+# Check if we should run a command immediately
+RUN_COMMAND=""
+if [ "$1" = "--run" ] || [ "$1" = "-r" ]; then
+    shift
+    RUN_COMMAND="$*"
+fi
+
 echo -e "${BLUE}=== Audiobook Creator All-in-One Startup ===${NC}"
 echo ""
 
@@ -231,4 +238,19 @@ fi
 
 echo ""
 echo -e "${GREEN}🎉 Everything is set up and ready!${NC}"
+
+# If a command was specified, run it immediately
+if [ -n "$RUN_COMMAND" ]; then
+    echo -e "${CYAN}🚀 Running command: $RUN_COMMAND${NC}"
+    echo ""
+    exec python app.py $RUN_COMMAND
+fi
+
+# If no command specified, start an interactive shell with the environment
+echo -e "${YELLOW}💡 Starting interactive shell with activated environment...${NC}"
 echo -e "${YELLOW}💡 You can now run 'python app.py' directly${NC}"
+echo -e "${YELLOW}💡 Type 'exit' to leave the environment${NC}"
+echo ""
+
+# Start a new shell with the environment activated
+exec bash --rcfile <(echo "source $VENV_DIR/bin/activate; PS1='(audiobooker) \w\$ '")
