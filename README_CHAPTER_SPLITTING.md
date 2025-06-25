@@ -27,6 +27,7 @@ The audiobook creator splits each chapter into separate files while maintaining 
 - Chapters are detected using common patterns (Chapter 1, CHAPTER 1, etc.)
 - Each chapter's audio (including title, content, and pauses) is saved separately
 - Pauses between chapters are preserved within each chapter file
+- **Paragraph pauses**: 1-second pauses are automatically added between paragraphs for natural reading flow
 - Files are named sequentially: `chapter1`, `chapter2`, etc.
 
 ### 2. MP3 Conversion (Default: Enabled)
@@ -42,6 +43,21 @@ The audiobook creator converts the final output to MP3 format for better compati
 **Requirements:**
 - `ffmpeg` must be installed on your system
 - The conversion uses high-quality settings (VBR quality 2)
+
+### 3. Paragraph Pauses (Automatic)
+
+The audiobook creator automatically adds 1-second pauses between paragraphs for natural reading flow.
+
+**Benefits:**
+- More natural listening experience
+- Clear separation between paragraphs
+- Prevents paragraphs from being read as one continuous sentence
+- Improves overall audio quality and comprehension
+
+**How it works:**
+- Empty lines in the text are detected as paragraph breaks
+- 1-second silent pauses are automatically inserted between paragraphs
+- Pauses are included in both chapter-split and single-file outputs
 
 ## Usage Examples
 

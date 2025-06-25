@@ -4,7 +4,17 @@ A robust, production-ready Python application for generating high-quality audiob
 
 ## Quick Start
 
-### Ubuntu Server Setup (Recommended)
+### All-in-One Setup (Recommended)
+
+```bash
+# One-command setup and activation - handles everything automatically
+./start.sh
+
+# After setup, you can run directly:
+python app.py --document my_book.txt
+```
+
+### Ubuntu Server Setup (Alternative)
 
 ```bash
 # One-command setup - creates everything you need in current directory
@@ -21,7 +31,10 @@ audiobook --document my_book.txt --voice narrator.wav
 git clone https://github.com/icewall905/audiobooker.git
 cd audiobooker
 
-# Run quick setup
+# Run all-in-one setup
+./start.sh
+
+# Or run quick setup
 ./quick_setup.sh
 
 # Activate environment and use
@@ -42,10 +55,17 @@ python app.py --document my_book.txt
 - 📖 **Multiple Workflows**: Both local and remote API support
 - 📁 **Chapter Splitting**: Split each chapter into separate files for easier management
 - 🎵 **MP3 Conversion**: Convert output to MP3 format for better compatibility
+- ⏸️ **Paragraph Pauses**: Automatic 1-second pauses between paragraphs for natural flow
 
 ## Usage Options
 
-### 🌐 Web Interface (Easiest)
+### 🚀 All-in-One (Easiest)
+```bash
+./start.sh
+# Then run: python app.py --document my_book.txt
+```
+
+### 🌐 Web Interface
 ```bash
 ./start_web.sh
 # Open http://localhost:7860 in your browser
@@ -53,7 +73,7 @@ python app.py --document my_book.txt
 
 ### 💻 Command Line
 ```bash
-./start.sh
+# After running ./start.sh, use:
 python app.py --document my_book.txt --voice narrator.wav
 ```
 

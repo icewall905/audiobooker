@@ -1,5 +1,34 @@
 #!/bin/bash
-# Audiobook Creator Launcher
-cd "/home/hnyg/git/audiobooker/audiobooker"
-source "audiobooker-env/bin/activate"
-python app.py "$@"
+# Global audiobook launcher script
+# This script can be placed in /usr/local/bin/ for global access
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# If this script is in the audiobooker directory, use it directly
+if [ -f "$SCRIPT_DIR/app.py" ]; then
+    cd "$SCRIPT_DIR"
+else
+    # Otherwise, look for audiobooker in common locations
+    for dir in "$HOME/git/audiobooker" "$HOME/audiobooker" "/opt/audiobooker" "/usr/local/audiobooker"; do
+        if [ -f "$dir/app.py" ]; then
+            cd "$dir"
+            break
+        fi
+    done
+fi
+
+# Check if we're in the right directory
+if [ ! -f "app.py" ]; then
+    echo "❌ audiobooker not found!"
+    echo "Please ensure audiobooker is installed and this script is in the correct location."
+    exit 1
+fi
+
+# Activate virtual environment if it exists
+if [ -d "audiobooker-env" ]; then
+    source audiobooker-env/bin/activate
+fi
+
+# Run the app with all arguments
+exec python app.py "$@"

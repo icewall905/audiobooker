@@ -81,11 +81,11 @@ def detect_chapters(text: str) -> List[dict]:
     return sections
 
 def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
-    """Intelligently split text into chunks, respecting sentence boundaries."""
+    """Intelligently split text into chunks, respecting sentence boundaries and adding paragraph pauses."""
     paragraphs = re.split(r'\n\s*\n', text)
     chunks = []
     
-    for paragraph in paragraphs:
+    for i, paragraph in enumerate(paragraphs):
         paragraph = paragraph.strip()
         if not paragraph:
             continue
@@ -105,6 +105,11 @@ def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]
             
             if current_chunk.strip():
                 chunks.append(current_chunk.strip())
+        
+        # Add paragraph pause after each paragraph (except the last one)
+        if i < len(paragraphs) - 1:
+            # Add a special marker for paragraph pause
+            chunks.append("[PAUSE_1S]")
     
     return chunks
 
@@ -293,10 +298,12 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             
             # Split section into chunks
             text_chunks = smart_text_split(section_text, max_length=MAX_CHUNK_LENGTH)
-            total_chunks += len(text_chunks)
-            print(f"Section split into {len(text_chunks)} chunks.")
+            # Count actual text chunks (excluding pause markers)
+            actual_text_chunks = [chunk for chunk in text_chunks if chunk != "[PAUSE_1S]"]
+            total_chunks += len(actual_text_chunks)
+            print(f"Section split into {len(actual_text_chunks)} text chunks + {len(text_chunks) - len(actual_text_chunks)} paragraph pauses.")
             
-            if not text_chunks:
+            if not actual_text_chunks:
                 print(f"No text found in section.")
                 continue
 
@@ -304,7 +311,17 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             section_audio_chunks = []
             
             for i, chunk in enumerate(text_chunks, 1):
-                print(f"  Chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
+                print(f"  Processing chunk {i}/{len(text_chunks)}...")
+                
+                # Check if this is a pause marker
+                if chunk == "[PAUSE_1S]":
+                    print(f"    Adding 1-second paragraph pause")
+                    pause_samples = int(1.0 * model.sr)  # 1 second pause
+                    pause_audio = torch.zeros(pause_samples)
+                    section_audio_chunks.append(pause_audio)
+                    continue
+                
+                print(f"    Text chunk ({len(chunk)} chars)...")
                 try:
                     if voice_prompt_path:
                         wav = model.generate(
@@ -339,7 +356,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                 chapter_stats.append({
                     'section': section_idx + 1,
                     'is_chapter_title': is_chapter_title,
-                    'chunks': len(text_chunks),
+                    'chunks': len(actual_text_chunks),
                     'duration': section_duration,
                     'chars': len(section_text)
                 })
