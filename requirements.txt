@@ -1,0 +1,4 @@
+# Core dependencies for Chatterbox TTS audiobook creator
+chatterbox-tts
+torch>=1.13.0
+torchaudio>=0.13.0
