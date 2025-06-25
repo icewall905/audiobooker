@@ -7,12 +7,13 @@ import sys
 from pathlib import Path
 import argparse
 from typing import List, Optional
+import subprocess
 
 # --- Configuration ---
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 DOCUMENT_PATH = "sample_document.txt" 
 VOICE_PROMPT_PATH = None  # Set to your voice reference file path if available
-OUTPUT_PATH = "my_audiobook.wav" 
+OUTPUT_PATH = "output/my_audiobook.wav" 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MAX_CHUNK_LENGTH = 300
 
@@ -119,21 +120,60 @@ def validate_inputs(document_path: str, voice_prompt_path: Optional[str] = None)
     
     return True
 
+def convert_to_mp3(input_path: str, output_path: str) -> bool:
+    """Convert WAV file to MP3 using ffmpeg."""
+    try:
+        # Check if ffmpeg is available
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print("Warning: ffmpeg not found. Skipping MP3 conversion.")
+            return False
+        
+        # Convert to MP3
+        cmd = [
+            'ffmpeg', '-i', input_path, 
+            '-codec:a', 'libmp3lame', 
+            '-q:a', '2',  # High quality MP3
+            '-y',  # Overwrite output file
+            output_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✅ Converted to MP3: {output_path}")
+            return True
+        else:
+            print(f"Error converting to MP3: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"Error during MP3 conversion: {e}")
+        return False
+
 def create_audiobook(document_path: str = DOCUMENT_PATH, 
                    voice_prompt_path: Optional[str] = VOICE_PROMPT_PATH,
                    output_path: str = OUTPUT_PATH,
                    exaggeration: float = 0.5,
                    cfg_weight: float = 0.5,
                    device: str = DEVICE,
-                   chapter_pause: float = 1.0):
+                   chapter_pause: float = 1.0,
+                   split_chapters: bool = True,
+                   convert_mp3: bool = True):
     """Create audiobook from document using Chatterbox TTS."""
     
     if not validate_inputs(document_path, voice_prompt_path):
         return False
     
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_path) if os.path.dirname(output_path) else 'output'
+    os.makedirs(output_dir, exist_ok=True)
+    
     print(f"Using device: {device}")
     print(f"Voice reference: {'Yes' if voice_prompt_path else 'No (using default voice)'}")
     print(f"Chapter pause: {chapter_pause}s")
+    print(f"Split chapters: {'Yes' if split_chapters else 'No'}")
+    print(f"Convert to MP3: {'Yes' if convert_mp3 else 'No'}")
+    print(f"Output directory: {output_dir}")
 
     # Initialize the Chatterbox model
     print("Loading ChatterboxTTS model...")
@@ -158,11 +198,16 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     chapter_count = sum(1 for section in sections if section['is_chapter_title'])
     print(f"Detected {len(sections)} sections ({chapter_count} chapter titles)")
 
+    # Prepare for chapter splitting
+    chapter_audio_chunks = []
+    current_chapter_audio = []
+    current_chapter = 0
+    chapter_files = []
+    
     # Process each section
     all_audio_chunks = []
     total_chunks = 0
     chapter_stats = []
-    current_chapter = 0
     
     for section_idx, section_data in enumerate(sections):
         section_text = section_data['text']
@@ -172,11 +217,39 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
             current_chapter += 1
             print(f"\n🎯 Processing Chapter Title {current_chapter}: '{section_text[:50]}...'")
             
+            # If splitting chapters and we have accumulated audio, save the previous chapter
+            if split_chapters and current_chapter > 1 and current_chapter_audio:
+                chapter_filename = os.path.join(output_dir, f"chapter{current_chapter-1}.wav")
+                chapter_mp3_filename = os.path.join(output_dir, f"chapter{current_chapter-1}.mp3")
+                
+                # Concatenate chapter audio
+                chapter_audio = torch.cat(current_chapter_audio)
+                
+                # Save chapter as WAV
+                ta.save(chapter_filename, chapter_audio.unsqueeze(0), model.sr)
+                print(f"  💾 Saved chapter {current_chapter-1}: {os.path.basename(chapter_filename)}")
+                
+                # Convert to MP3 if requested
+                if convert_mp3:
+                    if convert_to_mp3(chapter_filename, chapter_mp3_filename):
+                        chapter_files.append(chapter_mp3_filename)
+                        # Remove WAV file if MP3 conversion successful
+                        os.remove(chapter_filename)
+                    else:
+                        chapter_files.append(chapter_filename)
+                else:
+                    chapter_files.append(chapter_filename)
+                
+                # Reset for next chapter
+                current_chapter_audio = []
+            
             # Add pause BEFORE chapter title (except for very first section)
             if section_idx > 0 and chapter_pause > 0:
                 pause_samples = int(chapter_pause * model.sr)
                 pause_audio = torch.zeros(pause_samples)
                 all_audio_chunks.append(pause_audio)
+                if split_chapters:
+                    current_chapter_audio.append(pause_audio)
                 print(f"  Added {chapter_pause}s pause before chapter title")
             
             # Generate audio for chapter title
@@ -195,7 +268,10 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                         cfg_weight=cfg_weight
                     )
                 
-                all_audio_chunks.append(wav.squeeze(0).cpu())
+                chapter_title_audio = wav.squeeze(0).cpu()
+                all_audio_chunks.append(chapter_title_audio)
+                if split_chapters:
+                    current_chapter_audio.append(chapter_title_audio)
                 print(f"  Generated audio for chapter title ({len(section_text)} chars)")
                 
             except Exception as e:
@@ -207,6 +283,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                 pause_samples = int(chapter_pause * model.sr)
                 pause_audio = torch.zeros(pause_samples)
                 all_audio_chunks.append(pause_audio)
+                if split_chapters:
+                    current_chapter_audio.append(pause_audio)
                 print(f"  Added {chapter_pause}s pause after chapter title")
                 
         else:
@@ -242,7 +320,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                             cfg_weight=cfg_weight
                         )
                     
-                    section_audio_chunks.append(wav.squeeze(0).cpu())
+                    chunk_audio = wav.squeeze(0).cpu()
+                    section_audio_chunks.append(chunk_audio)
                     
                 except Exception as e:
                     print(f"  Error generating audio for chunk {i}: {e}")
@@ -252,6 +331,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                 # Concatenate section audio
                 section_audio = torch.cat(section_audio_chunks)
                 all_audio_chunks.append(section_audio)
+                if split_chapters:
+                    current_chapter_audio.append(section_audio)
                 
                 # Calculate section statistics
                 section_duration = len(section_audio) / model.sr
@@ -265,46 +346,93 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                 
                 print(f"Section complete: {section_duration:.1f}s")
 
-    # Final concatenation and save
+    # Save the last chapter if splitting chapters
+    if split_chapters and current_chapter_audio:
+        chapter_filename = os.path.join(output_dir, f"chapter{current_chapter}.wav")
+        chapter_mp3_filename = os.path.join(output_dir, f"chapter{current_chapter}.mp3")
+        
+        # Concatenate chapter audio
+        chapter_audio = torch.cat(current_chapter_audio)
+        
+        # Save chapter as WAV
+        ta.save(chapter_filename, chapter_audio.unsqueeze(0), model.sr)
+        print(f"  💾 Saved chapter {current_chapter}: {os.path.basename(chapter_filename)}")
+        
+        # Convert to MP3 if requested
+        if convert_mp3:
+            if convert_to_mp3(chapter_filename, chapter_mp3_filename):
+                chapter_files.append(chapter_mp3_filename)
+                # Remove WAV file if MP3 conversion successful
+                os.remove(chapter_filename)
+            else:
+                chapter_files.append(chapter_filename)
+        else:
+            chapter_files.append(chapter_filename)
+
+    # Final concatenation and save (for non-split mode or as backup)
     if not all_audio_chunks:
         print("No audio was generated. Exiting.")
         return False
 
-    print("\nConcatenating all audio...")
-    try:
-        full_audio = torch.cat(all_audio_chunks)
-        
-        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
-        
-        print(f"Saving final audiobook to {output_path} with sample rate {model.sr} Hz...")
-        ta.save(output_path, full_audio.unsqueeze(0), model.sr)
-        
-        # Print detailed statistics
-        total_duration = len(full_audio) / model.sr
-        total_minutes = total_duration / 60
-        total_chars = sum(stat['chars'] for stat in chapter_stats)
-        
-        print(f"\n✅ Audiobook creation complete! (v{VERSION})")
-        print(f"📊 Statistics:")
-        print(f"   Total sections: {len(sections)}")
-        print(f"   Chapter titles: {chapter_count}")
-        print(f"   Total chunks: {total_chunks}")
-        print(f"   Total characters: {total_chars:,}")
-        print(f"   Total duration: {total_minutes:.1f} minutes ({total_duration:.1f} seconds)")
-        print(f"   Average speaking rate: {total_chars / total_duration:.1f} chars/second")
-        print(f"   Output file: {output_path}")
-        
-        if chapter_count > 0:
-            print(f"\n📖 Section breakdown:")
-            for stat in chapter_stats:
-                section_type = "Chapter Title" if stat['is_chapter_title'] else "Content"
-                print(f"   Section {stat['section']} ({section_type}): {stat['duration']:.1f}s ({stat['chunks']} chunks, {stat['chars']:,} chars)")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error saving audiobook: {e}")
-        return False
+    if not split_chapters:
+        print("\nConcatenating all audio...")
+        try:
+            full_audio = torch.cat(all_audio_chunks)
+            
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else output_dir, exist_ok=True)
+            
+            print(f"Saving final audiobook to {output_path} with sample rate {model.sr} Hz...")
+            ta.save(output_path, full_audio.unsqueeze(0), model.sr)
+            
+            # Convert to MP3 if requested
+            if convert_mp3:
+                output_mp3 = output_path.replace('.wav', '.mp3')
+                if convert_to_mp3(output_path, output_mp3):
+                    print(f"✅ Final audiobook saved as MP3: {output_mp3}")
+                    # Remove WAV file if MP3 conversion successful
+                    os.remove(output_path)
+                else:
+                    print(f"✅ Final audiobook saved as WAV: {output_path}")
+            else:
+                print(f"✅ Final audiobook saved as WAV: {output_path}")
+            
+        except Exception as e:
+            print(f"Error saving audiobook: {e}")
+            return False
+
+    # Print detailed statistics
+    total_duration = sum(stat['duration'] for stat in chapter_stats)
+    total_minutes = total_duration / 60
+    total_chars = sum(stat['chars'] for stat in chapter_stats)
+    
+    print(f"\n✅ Audiobook creation complete! (v{VERSION})")
+    print(f"📊 Statistics:")
+    print(f"   Total sections: {len(sections)}")
+    print(f"   Chapter titles: {chapter_count}")
+    print(f"   Total chunks: {total_chunks}")
+    print(f"   Total characters: {total_chars:,}")
+    print(f"   Total duration: {total_minutes:.1f} minutes ({total_duration:.1f} seconds)")
+    print(f"   Average speaking rate: {total_chars / total_duration:.1f} chars/second")
+    
+    if split_chapters:
+        print(f"   Output files: {len(chapter_files)} chapter files")
+        for i, filename in enumerate(chapter_files, 1):
+            print(f"     Chapter {i}: {os.path.basename(filename)}")
+    else:
+        if convert_mp3:
+            output_mp3 = output_path.replace('.wav', '.mp3')
+            print(f"   Output file: {output_mp3}")
+        else:
+            print(f"   Output file: {output_path}")
+    
+    if chapter_count > 0:
+        print(f"\n📖 Section breakdown:")
+        for stat in chapter_stats:
+            section_type = "Chapter Title" if stat['is_chapter_title'] else "Content"
+            print(f"   Section {stat['section']} ({section_type}): {stat['duration']:.1f}s ({stat['chunks']} chunks, {stat['chars']:,} chars)")
+    
+    return True
 
 def main():
     """Main function with command line argument support."""
@@ -325,6 +453,10 @@ def main():
                        help="Don't use voice reference (use default voice)")
     parser.add_argument("--chapter-pause", type=float, default=1.0,
                        help="Pause duration between chapters in seconds (default: 1.0)")
+    parser.add_argument("--no-split-chapters", action="store_true",
+                       help="Don't split chapters (default: split chapters)")
+    parser.add_argument("--no-mp3", action="store_true",
+                       help="Don't convert to MP3 (default: convert to MP3)")
     
     args = parser.parse_args()
     
@@ -344,6 +476,8 @@ def main():
     print(f"CFG Weight: {args.cfg_weight}")
     print(f"Device: {args.device}")
     print(f"Chapter pause: {args.chapter_pause}s")
+    print(f"Split chapters: {'No' if args.no_split_chapters else 'Yes (default)'}")
+    print(f"Convert to MP3: {'No' if args.no_mp3 else 'Yes (default)'}")
     print("=" * 50)
     
     success = create_audiobook(
@@ -353,7 +487,9 @@ def main():
         exaggeration=args.exaggeration,
         cfg_weight=args.cfg_weight,
         device=args.device,
-        chapter_pause=args.chapter_pause
+        chapter_pause=args.chapter_pause,
+        split_chapters=not args.no_split_chapters,
+        convert_mp3=not args.no_mp3
     )
     
     if success:

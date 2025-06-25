@@ -35,11 +35,13 @@ python app.py --document my_book.txt
 - 🎤 **Voice Consistency**: Maintains natural voice throughout entire audiobooks
 - 🌐 **Web Interface**: Easy-to-use browser-based interface with drag-and-drop
 - 🚀 **GPU Acceleration**: CUDA optimization for faster generation
-- � **Chapter Detection**: Automatic chapter detection with configurable pauses
-- �🔧 **Configurable**: Adjustable voice parameters and quality settings
+- 📖 **Chapter Detection**: Automatic chapter detection with configurable pauses
+- 🔧 **Configurable**: Adjustable voice parameters and quality settings
 - 📊 **Progress Tracking**: Real-time generation progress updates
 - 🛠️ **Production Ready**: Comprehensive error handling and logging
 - 📖 **Multiple Workflows**: Both local and remote API support
+- 📁 **Chapter Splitting**: Split each chapter into separate files for easier management
+- 🎵 **MP3 Conversion**: Convert output to MP3 format for better compatibility
 
 ## Usage Options
 
@@ -61,6 +63,7 @@ python app.py --document my_book.txt --voice narrator.wav
 - [Usage Guide](README_USAGE.md) - Detailed usage examples and options
 - [Web Interface Guide](README_WEB.md) - Browser-based interface documentation
 - [Remote API Guide](README_REMOTE.md) - Using with remote TTS services
+- [Chapter Splitting Guide](README_CHAPTER_SPLITTING.md) - Chapter splitting and MP3 conversion features
 - [Project Summary](PROJECT_SUMMARY.md) - Technical overview and architecture
 
 ## Quick Examples
@@ -69,7 +72,7 @@ python app.py --document my_book.txt --voice narrator.wav
 # Easy start with guided interface
 ./start.sh
 
-# Basic audiobook generation
+# Basic audiobook generation (default: split chapters + MP3)
 python app.py --document book.txt
 
 # With custom voice and settings
@@ -79,7 +82,16 @@ python app.py --document novel.txt --voice speaker.wav --exaggeration 1.2 --cfg-
 python app.py --document story.txt  # Automatically uses example.wav if found
 
 # Using global launcher (after Ubuntu setup)
-audiobook --document story.txt --voice narrator.wav --output my_audiobook.wav
+audiobook --document story.txt --voice narrator.wav --output output/my_audiobook.wav
+
+# Single file output (disable chapter splitting)
+python app.py --document book.txt --no-split-chapters
+
+# WAV format only (disable MP3 conversion)
+python app.py --document book.txt --no-mp3
+
+# Legacy behavior (single WAV file)
+python app.py --document book.txt --no-split-chapters --no-mp3
 ```
 
 ## Requirements
@@ -89,6 +101,7 @@ audiobook --document story.txt --voice narrator.wav --output my_audiobook.wav
 - NVIDIA GPU with CUDA support (recommended)
 - 8GB+ RAM
 - 10GB+ free disk space
+- ffmpeg (for MP3 conversion - optional)
 
 ## License
 

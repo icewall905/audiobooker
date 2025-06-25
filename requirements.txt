@@ -5,3 +5,6 @@ torchaudio>=0.13.0
 
 # Web interface dependencies
 gradio>=4.0.0
+
+# Optional: MP3 conversion (requires ffmpeg system package)
+# ffmpeg-python>=0.2.0
