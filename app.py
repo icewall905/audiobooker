@@ -163,7 +163,8 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                    device: str = DEVICE,
                    chapter_pause: float = 1.0,
                    split_chapters: bool = True,
-                   convert_mp3: bool = True):
+                   convert_mp3: bool = True,
+                   speech_rate: float = 1.0):
     """Create audiobook from document using Chatterbox TTS."""
     
     if not validate_inputs(document_path, voice_prompt_path):
@@ -179,6 +180,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
     print(f"Split chapters: {'Yes' if split_chapters else 'No'}")
     print(f"Convert to MP3: {'Yes' if convert_mp3 else 'No'}")
     print(f"Output directory: {output_dir}")
+    print(f"Speech rate: {speech_rate}x")
 
     # Initialize the Chatterbox model
     print("Loading ChatterboxTTS model...")
@@ -338,6 +340,27 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                         )
                     
                     chunk_audio = wav.squeeze(0).cpu()
+                    
+                    # Apply speech rate modification if needed
+                    if speech_rate != 1.0:
+                        # Use torchaudio's time stretching for speech rate control
+                        try:
+                            # Convert to torchaudio format
+                            chunk_audio_ta = chunk_audio.unsqueeze(0)  # Add batch dimension
+                            
+                            # Apply time stretching
+                            chunk_audio_ta = ta.functional.speed(
+                                chunk_audio_ta, 
+                                orig_freq=model.sr, 
+                                factor=speech_rate
+                            )
+                            
+                            # Remove batch dimension
+                            chunk_audio = chunk_audio_ta.squeeze(0)
+                            print(f"    Applied speech rate: {speech_rate}x")
+                        except Exception as e:
+                            print(f"    Warning: Could not apply speech rate: {e}")
+                    
                     section_audio_chunks.append(chunk_audio)
                     
                 except Exception as e:
@@ -474,6 +497,8 @@ def main():
                        help="Don't split chapters (default: split chapters)")
     parser.add_argument("--no-mp3", action="store_true",
                        help="Don't convert to MP3 (default: convert to MP3)")
+    parser.add_argument("--speech-rate", "-s", type=float, default=1.0,
+                       help="Speech rate multiplier (0.5-2.0, default: 1.0, lower = slower)")
     
     args = parser.parse_args()
     
@@ -495,6 +520,7 @@ def main():
     print(f"Chapter pause: {args.chapter_pause}s")
     print(f"Split chapters: {'No' if args.no_split_chapters else 'Yes (default)'}")
     print(f"Convert to MP3: {'No' if args.no_mp3 else 'Yes (default)'}")
+    print(f"Speech rate: {args.speech_rate}x")
     print("=" * 50)
     
     success = create_audiobook(
@@ -506,7 +532,8 @@ def main():
         device=args.device,
         chapter_pause=args.chapter_pause,
         split_chapters=not args.no_split_chapters,
-        convert_mp3=not args.no_mp3
+        convert_mp3=not args.no_mp3,
+        speech_rate=args.speech_rate
     )
     
     if success:

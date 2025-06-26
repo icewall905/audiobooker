@@ -94,6 +94,7 @@ python app.py --document my_book.txt --voice narrator.wav
 - [Web Interface Guide](README_WEB.md) - Browser-based interface documentation
 - [Remote API Guide](README_REMOTE.md) - Using with remote TTS services
 - [Chapter Splitting Guide](README_CHAPTER_SPLITTING.md) - Chapter splitting and MP3 conversion features
+- [Clear Speech Guide](CLEAR_SPEECH_GUIDE.md) - Tips for clearer, more natural speech
 - [Project Summary](PROJECT_SUMMARY.md) - Technical overview and architecture
 
 ## Quick Examples
@@ -122,6 +123,9 @@ python app.py --document book.txt --no-mp3
 
 # Legacy behavior (single WAV file)
 python app.py --document book.txt --no-split-chapters --no-mp3
+
+# Slower, clearer speech (new feature)
+python app.py --document book.txt --speech-rate 0.8
 ```
 
 ## Requirements
