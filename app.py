@@ -345,6 +345,15 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                     if speech_rate != 1.0:
                         # Use torchaudio's time stretching for speech rate control
                         try:
+                            # Handle different audio formats from the model
+                            if isinstance(chunk_audio, tuple):
+                                # If it's a tuple, take the first element (audio data)
+                                chunk_audio = chunk_audio[0]
+                            
+                            # Ensure it's a tensor
+                            if not isinstance(chunk_audio, torch.Tensor):
+                                chunk_audio = torch.tensor(chunk_audio)
+                            
                             # Convert to torchaudio format
                             chunk_audio_ta = chunk_audio.unsqueeze(0)  # Add batch dimension
                             
@@ -360,6 +369,7 @@ def create_audiobook(document_path: str = DOCUMENT_PATH,
                             print(f"    Applied speech rate: {speech_rate}x")
                         except Exception as e:
                             print(f"    Warning: Could not apply speech rate: {e}")
+                            # Continue with original audio if speech rate fails
                     
                     section_audio_chunks.append(chunk_audio)
                     
