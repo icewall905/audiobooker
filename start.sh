@@ -17,9 +17,32 @@ CURRENT_DIR=$(pwd)
 
 # Check if we should run a command immediately
 RUN_COMMAND=""
-if [ "$1" = "--run" ] || [ "$1" = "-r" ]; then
-    shift
-    RUN_COMMAND="$*"
+USE_REMOTE=0
+
+# Parse arguments to determine mode and collect command
+while [ $# -gt 0 ]; do
+    case $1 in
+        --run|-r)
+            shift
+            RUN_COMMAND="$*"
+            break
+            ;;
+        --run-remote|-R)
+            shift
+            RUN_COMMAND="$*"
+            USE_REMOTE=1
+            break
+            ;;
+        *)
+            # No run flag, exit loop
+            break
+            ;;
+    esac
+done
+
+# If user passed a --server flag inside RUN_COMMAND, prefer remote runner
+if [ -n "$RUN_COMMAND" ] && echo " $RUN_COMMAND " | grep -q " --server "; then
+    USE_REMOTE=1
 fi
 
 echo -e "${BLUE}=== Audiobook Creator All-in-One Startup ===${NC}"
@@ -188,6 +211,10 @@ echo -e "${GREEN}Voice Cloning:${NC}"
 echo "  python app.py --document book.txt --voice narrator.wav # Use specific voice"
 echo "  python app.py --document book.txt --no-voice          # Force default voice (ignore example.wav)"
 echo ""
+echo -e "${GREEN}Remote Server (Chatterbox API):${NC}"
+echo "  python app_remote.py --document book.txt --server http://10.0.10.23:7860 [--voice narrator.wav]"
+echo "  ./start.sh --run-remote --document book.txt [--voice narrator.wav] [--server http://10.0.10.23:7860]"
+echo ""
 echo -e "${GREEN}Advanced Settings:${NC}"
 echo "  python app.py --document book.txt --exaggeration 0.7  # More expressive"
 echo "  python app.py --document book.txt --cfg-weight 0.3    # Faster speech"
@@ -243,7 +270,11 @@ echo -e "${GREEN}🎉 Everything is set up and ready!${NC}"
 if [ -n "$RUN_COMMAND" ]; then
     echo -e "${CYAN}🚀 Running command: $RUN_COMMAND${NC}"
     echo ""
-    exec python app.py $RUN_COMMAND
+    if [ "$USE_REMOTE" -eq 1 ]; then
+        exec python app_remote.py $RUN_COMMAND
+    else
+        exec python app.py $RUN_COMMAND
+    fi
 fi
 
 # If no command specified, start an interactive shell with the environment
