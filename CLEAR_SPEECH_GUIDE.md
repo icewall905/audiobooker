@@ -30,13 +30,13 @@ Use the new `--speech-rate` parameter to slow down speech without affecting qual
 
 ```bash
 # Slightly slower (recommended)
-./audiobook_run.sh --document book.txt --speech-rate 0.8
+audiobook --document book.txt --speech-rate 0.8
 
 # Much slower
-./audiobook_run.sh --document book.txt --speech-rate 0.6
+audiobook --document book.txt --speech-rate 0.6
 
 # Very slow
-./audiobook_run.sh --document book.txt --speech-rate 0.5
+audiobook --document book.txt --speech-rate 0.5
 ```
 
 **Speech Rate Guidelines:**
@@ -51,7 +51,7 @@ Use the new `--speech-rate` parameter to slow down speech without affecting qual
 
 **For maximum clarity:**
 ```bash
-./audiobook_run.sh --document book.txt \
+audiobook --document book.txt \
   --speech-rate 0.8 \
   --exaggeration 0.3 \
   --cfg-weight 0.5
@@ -68,7 +68,7 @@ Use the new `--speech-rate` parameter to slow down speech without affecting qual
 ```bash
 # Record a clear voice sample (5-10 seconds)
 # Save as example.wav or use a specific file
-./audiobook_run.sh --document book.txt --voice clear_voice.wav --speech-rate 0.8
+audiobook --document book.txt --voice clear_voice.wav --speech-rate 0.8
 ```
 
 **Voice recording tips:**
@@ -100,7 +100,7 @@ She stopped to look at the flowers. They were beautiful in the morning light. Th
 
 **For technical content:**
 ```bash
-./audiobook_run.sh --document technical_book.txt \
+audiobook --document technical_book.txt \
   --speech-rate 0.7 \
   --exaggeration 0.2 \
   --chapter-pause 2.0
@@ -108,7 +108,7 @@ She stopped to look at the flowers. They were beautiful in the morning light. Th
 
 **For educational content:**
 ```bash
-./audiobook_run.sh --document educational_book.txt \
+audiobook --document educational_book.txt \
   --speech-rate 0.8 \
   --exaggeration 0.1 \
   --chapter-pause 1.5
@@ -116,7 +116,7 @@ She stopped to look at the flowers. They were beautiful in the morning light. Th
 
 **For fiction:**
 ```bash
-./audiobook_run.sh --document fiction_book.txt \
+audiobook --document fiction_book.txt \
   --speech-rate 0.9 \
   --exaggeration 0.4 \
   --chapter-pause 1.0
@@ -132,13 +132,13 @@ She stopped to look at the flowers. They were beautiful in the morning light. Th
 ### **Step 2: Choose Your Settings**
 ```bash
 # For most content (recommended)
-./audiobook_run.sh --document book.txt --speech-rate 0.8
+audiobook --document book.txt --speech-rate 0.8
 
 # For technical/educational content
-./audiobook_run.sh --document book.txt --speech-rate 0.7 --exaggeration 0.2
+audiobook --document book.txt --speech-rate 0.7 --exaggeration 0.2
 
 # For fiction
-./audiobook_run.sh --document book.txt --speech-rate 0.9 --exaggeration 0.4
+audiobook --document book.txt --speech-rate 0.9 --exaggeration 0.4
 ```
 
 ### **Step 3: Test and Adjust**
@@ -158,9 +158,9 @@ If you need even more clarity, you can post-process the audio:
 4. **Normalize** the audio levels
 
 ### **File Format Considerations**
-- **MP3**: Good for compatibility, smaller files
-- **WAV**: Better quality, larger files
-- **Use `--no-mp3`** for WAV output if you plan to post-process
+- **WAV** (default): better quality, larger files, best for post-processing
+- **MP3**: pass `--mp3` for smaller, widely compatible files (needs `ffmpeg`)
+- Chapter splitting is opt-in: pass `--split-chapters` to get one file per chapter
 
 ## 🔧 **Troubleshooting**
 

@@ -7,7 +7,9 @@ on a machine without any ML dependencies.
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import time
 import wave
 from abc import ABC, abstractmethod
@@ -125,7 +127,13 @@ def _decode_wav(data: bytes) -> tuple[np.ndarray, int]:
 
 
 class RemoteEngine(Engine):
-    """Chatterbox served over Gradio's HTTP API."""
+    """Chatterbox served over Gradio's HTTP API.
+
+    Results are read from the server's ``text/event-stream`` response (the way
+    Gradio actually delivers them); JSON polling remains as a fallback for older
+    or proxied servers.  Audio may come back as a file reference, a URL, raw WAV
+    bytes or a ``data:audio/...;base64,`` URI.
+    """
 
     name = "chatterbox-remote"
 
@@ -188,11 +196,12 @@ class RemoteEngine(Engine):
             self._log(f"Server reports {sample_rate} Hz; using that for output.")
             self.sample_rate = int(sample_rate)
 
+    # -- request/response --------------------------------------------------
     def _request(
         self, text: str, exaggeration: float = 0.5, cfg_weight: float = 0.5
     ) -> tuple[np.ndarray, int]:
         session = self._session()
-        data = {
+        payload = {
             "data": [
                 None,  # gradio state slot
                 text,
@@ -204,7 +213,7 @@ class RemoteEngine(Engine):
             ]
         }
         response = session.post(
-            f"{self.server_url}/gradio_api/call/generate", json=data, timeout=self.timeout
+            f"{self.server_url}/gradio_api/call/generate", json=payload, timeout=self.timeout
         )
         response.raise_for_status()
         event_id = (response.json() or {}).get("event_id")
@@ -212,6 +221,68 @@ class RemoteEngine(Engine):
             raise EngineError("server did not return an event id")
 
         status_url = f"{self.server_url}/gradio_api/call/generate/{event_id}"
+        result = self._read_result(session, status_url)
+        return self._decode_payload(session, result)
+
+    def _read_result(self, session, status_url: str):
+        """Prefer Gradio's SSE stream, fall back to polling the status endpoint."""
+        try:
+            response = session.get(
+                status_url,
+                stream=True,
+                timeout=self.timeout,
+                headers={"Accept": "text/event-stream"},
+            )
+        except Exception as exc:  # network hiccup: polling may still work
+            self._log(f"SSE request failed ({exc}); falling back to polling")
+            return self._poll(session, status_url)
+
+        with response:
+            content_type = response.headers.get("content-type", "")
+            if response.status_code != 200 or "event-stream" not in content_type:
+                return self._poll(session, status_url)
+            try:
+                return self._parse_stream(response)
+            except EngineError:
+                raise
+            except Exception as exc:
+                self._log(f"SSE stream broke ({exc}); falling back to polling")
+                return self._poll(session, status_url)
+
+    @staticmethod
+    def _parse_stream(response):
+        """Return the final ``data:`` payload of a Gradio event stream."""
+        event = None
+        last_payload = None
+        for raw in response.iter_lines(decode_unicode=True):
+            if raw is None:
+                continue
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith("event:"):
+                event = line.split(":", 1)[1].strip()
+                continue
+            if not line.startswith("data:"):
+                continue
+            body = line.split(":", 1)[1].strip()
+            if not body or body == "null":
+                continue
+            try:
+                payload = json.loads(body)
+            except ValueError:
+                continue
+            if isinstance(payload, dict) and payload.get("error"):
+                raise EngineError(f"server error: {payload['error']}")
+            last_payload = payload
+            if event in ("complete", "process_completed"):
+                return payload
+        if last_payload is not None:
+            return last_payload
+        raise EngineError("event stream ended without a result")
+
+    def _poll(self, session, status_url: str):
+        """JSON polling fallback for servers that do not stream."""
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             time.sleep(1.0)
@@ -221,25 +292,62 @@ class RemoteEngine(Engine):
             payload = status.json() or {}
             message = payload.get("msg")
             if message == "process_completed":
-                outputs = (payload.get("output") or {}).get("data") or []
-                if not outputs:
-                    raise EngineError("server returned no audio reference")
-                reference = outputs[0]
-                if isinstance(reference, dict) and reference.get("path"):
-                    url = f"{self.server_url}/file={reference['path']}"
-                elif isinstance(reference, dict) and reference.get("url"):
-                    url = reference["url"]
-                else:
-                    raise EngineError(f"unexpected audio reference: {reference!r}")
-                audio = session.get(url, timeout=self.timeout)
-                audio.raise_for_status()
-                return _decode_wav(audio.content)
+                return payload
             if message == "process_failed":
                 raise EngineError(f"server failed to synthesise: {payload.get('output')}")
+            if payload.get("error"):
+                raise EngineError(f"server error: {payload['error']}")
         raise EngineError("timed out waiting for the server to synthesise audio")
 
+    # -- payload decoding --------------------------------------------------
+    def _audio_reference(self, data) -> tuple[str, str]:
+        """Find the audio location in a Gradio result payload."""
+        for item in data or []:
+            if isinstance(item, dict):
+                path = item.get("path") or item.get("name")
+                if path and str(path).endswith((".wav", ".mp3", ".flac", ".ogg")):
+                    return "url", f"{self.server_url}/file={path}"
+                if item.get("url"):
+                    return "url", item["url"]
+            if isinstance(item, str):
+                if item.startswith("data:audio"):
+                    return "base64", item
+                if item.startswith("http"):
+                    return "url", item
+                if item.endswith((".wav", ".mp3", ".flac", ".ogg")):
+                    return "url", f"{self.server_url}/file={item}"
+        raise EngineError(f"no audio in server response: {str(data)[:200]}")
+
+    def _decode_payload(self, session, payload) -> tuple[np.ndarray, int]:
+        data = payload
+        if isinstance(payload, dict):
+            data = payload.get("data")
+            if data is None:
+                data = (payload.get("output") or {}).get("data") or []
+        kind, value = self._audio_reference(data)
+
+        if kind == "base64":
+            encoded = value.split(",", 1)[1] if "," in value else value
+            return _decode_wav(base64.b64decode(encoded))
+
+        response = session.get(value, timeout=self.timeout)
+        response.raise_for_status()
+        content = response.content
+        if content[:4] == b"RIFF":
+            return _decode_wav(content)
+        # Some servers answer with a JSON document holding a data URI.
+        try:
+            inner = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise EngineError("server returned audio that is not a WAV file")
+        if isinstance(inner, str) and inner.startswith("data:audio"):
+            return _decode_wav(base64.b64decode(inner.split(",", 1)[1]))
+        raise EngineError("could not decode the audio returned by the server")
+
     def generate(self, text: str, *, exaggeration: float, cfg_weight: float) -> np.ndarray:
-        samples, sample_rate = self._request(text, exaggeration=exaggeration, cfg_weight=cfg_weight)
+        samples, sample_rate = self._request(
+            text, exaggeration=exaggeration, cfg_weight=cfg_weight
+        )
         if sample_rate and self.sample_rate and sample_rate != self.sample_rate:
             raise EngineError(
                 f"server returned {sample_rate} Hz but the job expects {self.sample_rate} Hz; "

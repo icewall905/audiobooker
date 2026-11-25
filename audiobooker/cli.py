@@ -8,6 +8,7 @@ import sys
 from typing import Optional, Sequence
 
 from . import __version__
+from .config import cli_defaults
 from .engine import ChatterboxEngine, EngineError
 from .pipeline import AudiobookPipeline, PipelineConfig, PipelineError
 from .report import ConsoleReporter
@@ -47,6 +48,16 @@ def _non_negative_int(value: str) -> int:
     return number
 
 
+def _speech_rate(value: str) -> float:
+    try:
+        number = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a number")
+    if not 0.25 <= number <= 4.0:
+        raise argparse.ArgumentTypeError(f"must be between 0.25 and 4.0, got {number}")
+    return number
+
+
 def _chunk_length(value: str) -> int:
     try:
         number = int(value)
@@ -83,6 +94,11 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
                         help="CFG weight, 0.0-1.0")
     parser.add_argument("--chapter-pause", type=_non_negative_float, default=1.0,
                         help="silence around chapter titles, in seconds")
+    parser.add_argument("--paragraph-pause", type=_non_negative_float, default=1.0,
+                        help="silence between paragraphs, in seconds (0 disables)")
+    parser.add_argument("--speech-rate", type=_speech_rate, default=1.0,
+                        help="speaking rate, 1.0 is unchanged (pitch is preserved "
+                             "when torchaudio is installed)")
     parser.add_argument("--max-chunk-length", type=_chunk_length,
                         default=DEFAULT_MAX_CHUNK_LENGTH,
                         help="maximum characters sent to the model per call")
@@ -98,6 +114,14 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
                         help="ignore existing checkpoints and render from scratch")
     parser.add_argument("--keep-parts", action="store_true",
                         help="keep the per-section WAV parts after a successful run")
+    parser.add_argument("--split-chapters", action="store_true",
+                        help="write one file per chapter instead of a single audiobook")
+    parser.add_argument("--no-split-chapters", dest="split_chapters", action="store_false",
+                        help="write a single audiobook file (default)")
+    parser.add_argument("--mp3", dest="mp3", action="store_true",
+                        help="encode the result to MP3 with ffmpeg (removes the WAV)")
+    parser.add_argument("--no-mp3", dest="mp3", action="store_false",
+                        help="keep WAV output (default)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the detected structure and exit (no model load)")
     parser.add_argument("--quiet", "-q", action="store_true",
@@ -131,6 +155,20 @@ def print_plan(sections: Sequence[Section], counts: Sequence[int], max_rows: int
     print(f"\nTotal: {len(sections)} sections, {total_chunks} chunks, {total_chars:,} characters")
 
 
+CONFIG_KEYS = {
+    "document", "voice", "output", "device", "exaggeration", "cfg_weight",
+    "chapter_pause", "paragraph_pause", "max_chunk_length", "speech_rate",
+    "retries", "split_chapters", "mp3",
+}
+
+
+def apply_config_defaults(parser: argparse.ArgumentParser) -> None:
+    """Let audiobooker.conf [defaults] provide defaults, flags still win."""
+    values = {key: value for key, value in cli_defaults().items() if key in CONFIG_KEYS}
+    if values:
+        parser.set_defaults(**values)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="audiobook",
@@ -140,6 +178,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     add_common_arguments(parser)
     parser.add_argument("--device", default=None,
                         help="torch device, e.g. cuda or cpu (default: auto-detect)")
+    parser.add_argument("-s", dest="speech_rate", type=_speech_rate,
+                        default=argparse.SUPPRESS, help="alias for --speech-rate")
+    apply_config_defaults(parser)
     args = parser.parse_args(argv)
 
     voice_path = resolve_voice(args)
@@ -150,6 +191,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         exaggeration=args.exaggeration,
         cfg_weight=args.cfg_weight,
         chapter_pause=args.chapter_pause,
+        paragraph_pause=args.paragraph_pause,
+        speech_rate=args.speech_rate,
+        split_chapters=args.split_chapters,
+        mp3=args.mp3,
         max_chunk_length=args.max_chunk_length,
         chapter_pattern=args.chapter_pattern,
         retries=args.retries,
@@ -169,6 +214,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Exaggeration": args.exaggeration,
             "CFG weight": args.cfg_weight,
             "Chapter pause": f"{args.chapter_pause}s",
+            "Paragraph pause": f"{args.paragraph_pause}s",
+            "Speech rate": f"{args.speech_rate}x",
+            "Output mode": (
+                f"{'per chapter' if args.split_chapters else 'single file'}, "
+                f"{'MP3' if args.mp3 else 'WAV'}"
+            ),
             "Max chunk length": args.max_chunk_length,
         },
     )

@@ -41,12 +41,28 @@ audiobook --document book.txt                       # default voice
 audiobook -d book.txt -v narrator.wav               # voice cloning
 audiobook -d book.txt -e 0.7 -c 0.3                 # more expressive / faster speech
 audiobook -d book.txt --chapter-pause 1.5           # longer pauses around chapter titles
+audiobook -d book.txt --paragraph-pause 0.5         # silence between paragraphs (default 1.0)
+audiobook -d book.txt --speech-rate 1.15            # speak faster, pitch preserved
 audiobook -d book.txt --max-chunk-length 200        # smaller TTS prompts
+audiobook -d book.txt --split-chapters              # one file per chapter
+audiobook -d book.txt --mp3                         # MP3 via ffmpeg (drops the WAV)
 audiobook -d book.txt --dry-run                     # show chapters/chunks, no model load
 audiobook -d book.txt                               # re-run the same command to resume
 ```
 
 `python app.py ...` keeps working and is equivalent to `audiobook ...`.
+
+### Speech rate, paragraph pauses and chapter files
+
+* `--speech-rate 1.25` speeds the narration up without changing the pitch (uses
+  `torchaudio.functional.speed`; on a remote-only install without torchaudio it
+  falls back to resampling and warns once, because that path shifts the pitch).
+* `--paragraph-pause` inserts silence between paragraphs (default `1.0`, `0`
+  disables it). Pauses are written directly to the output, so they are not
+  counted as chunks and do not cost generation time.
+* `--split-chapters` writes `chapter1.wav`, `chapter2.wav`, … instead of one
+  book; `--mp3` encodes the result with `ffmpeg` and removes the WAV.
+* Both flags keep the 0.2-era spellings `--no-split-chapters` and `--no-mp3`.
 
 ### Resume, parts and failures
 
@@ -74,15 +90,39 @@ Paste text or upload a `.txt`, optionally upload a voice sample, and the same
 pipeline runs in the background with progress reporting and the same failure
 summary.
 
+### Configuration file
+
+`audiobook-remote` and `audiobook` read `audiobooker.conf` (see
+`audiobooker.conf.sample`). Lookup order: `$AUDIOBOOKER_CONF`, `./audiobooker.conf`,
+`~/.config/audiobooker/audiobooker.conf`, `/etc/audiobooker/audiobooker.conf`.
+
+```ini
+[server]
+url = http://gpu-box:7860
+
+[defaults]
+speech_rate = 1.1
+paragraph_pause = 0.75
+max_chunk_length = 250
+```
+
+Precedence is always: command line flag > environment variable
+(`CHATTERBOX_SERVER_URL`) > `audiobooker.conf` > built-in default. The committed
+`audiobooker.conf.sample` is a template; `audiobooker.conf` itself is ignored by
+git so site-specific URLs stay out of the repository.
+
 ### Remote server
 
 ```bash
 audiobook-remote --server http://gpu-box:7860 -d book.txt -v narrator.wav
 ```
 
-The client reads the sample rate from the server's response (previously it was
-hardcoded to 24 kHz, which silently produced pitch-shifted audio from a 32 kHz
-server) and retries transient HTTP failures the same way the local engine does.
+The client streams Gradio's `text/event-stream` response and falls back to JSON
+polling when a proxy or an older server does not stream; it accepts file
+references, direct URLs, raw WAV bytes and `data:audio/...;base64,` payloads. The
+sample rate is read from the response (previously it was hardcoded to 24 kHz,
+which silently produced pitch-shifted audio from a 32 kHz server), and transient
+HTTP failures are retried like the local engine.
 
 ## Text handling
 
@@ -102,6 +142,8 @@ audiobooker/
 ├── audio.py      streaming WAV writer, part concatenation
 ├── engine.py     ChatterboxEngine (local), RemoteEngine (HTTP)
 ├── pipeline.py   orchestration: checkpoints, retries, failure reports
+├── dsp.py        speech-rate filter (torchaudio, resampling fallback)
+├── config.py     audiobooker.conf + environment resolution
 ├── cli.py        `audiobook`
 ├── remote_cli.py `audiobook-remote`
 ├── web.py        `audiobook-web` (Gradio)
@@ -118,8 +160,10 @@ pytest            # no GPU, no torch, no network required
 ```
 
 The suite covers chunking and chapter-detection edge cases, the WAV writer,
-checkpoint/resume behaviour, retry and failure reporting, CLI validation (including
-`--max-chunk-length`, which `validate_production.py` depends on) and WAV decoding.
+checkpoint/resume behaviour, retry and failure reporting, paragraph pauses,
+speech-rate post-processing, chapter splitting, MP3 output, config/env
+precedence, the SSE transport, CLI validation (including `--max-chunk-length`,
+which `validate_production.py` depends on) and WAV decoding.
 
 ## Requirements
 

@@ -13,13 +13,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from .audio import AudioSink
+from .dsp import change_speed
 from .engine import Engine
 from .text import (
     DEFAULT_MAX_CHUNK_LENGTH,
@@ -29,6 +31,7 @@ from .text import (
     input_problems,
     read_document,
     split_into_chunks,
+    split_paragraphs,
 )
 
 MANIFEST_VERSION = 3
@@ -67,6 +70,7 @@ class ChunkFailure:
 @dataclass
 class JobResult:
     output_path: Optional[str] = None
+    output_paths: List[str] = field(default_factory=list)
     sections: int = 0
     chapters: int = 0
     chunks_total: int = 0
@@ -96,7 +100,11 @@ class JobResult:
             lines.append(
                 f"⚠️  Audiobook written with {self.chunks_failed} chunk(s) of text missing"
             )
-        if self.output_path:
+        if len(self.output_paths) > 1:
+            lines.append(f"   Output: {len(self.output_paths)} files")
+            for path in self.output_paths:
+                lines.append(f"     {path}")
+        elif self.output_path:
             lines.append(f"   Output: {self.output_path}")
         minutes = self.duration_seconds / 60
         lines.append(f"   Duration: {minutes:.1f} min ({self.duration_seconds:.0f} s)")
@@ -126,6 +134,8 @@ class PipelineConfig:
     exaggeration: float = 0.5
     cfg_weight: float = 0.5
     chapter_pause: float = 1.0
+    paragraph_pause: float = 1.0
+    speech_rate: float = 1.0
     max_chunk_length: int = DEFAULT_MAX_CHUNK_LENGTH
     chapter_pattern: Optional[str] = None
     retries: int = 2
@@ -133,6 +143,8 @@ class PipelineConfig:
     resume: bool = True
     keep_parts: bool = False
     strict: bool = False
+    split_chapters: bool = False
+    mp3: bool = False
 
 
 def voice_fingerprint(path: Optional[str]) -> Optional[str]:
@@ -234,6 +246,8 @@ class AudiobookPipeline:
         self._progress = progress or (lambda done, total, message: None)
         self._done = 0
         self._total = 0
+        self._sample_rate = 0
+        self._speed_warned = False
 
     # -- layout ------------------------------------------------------------
     @property
@@ -249,12 +263,18 @@ class AudiobookPipeline:
         """Detected sections and the number of engine calls each needs."""
         text = self._document_text()
         sections = detect_sections(text, self.config.chapter_pattern)
-        max_length = self.config.max_chunk_length
-        counts = [
-            1 if section.is_chapter_title else len(split_into_chunks(section.text, max_length))
-            for section in sections
-        ]
+        counts = [sum(len(group) for group in self._paragraph_chunks(section)) for section in sections]
         return sections, counts
+
+    def _paragraph_chunks(self, section: Section) -> List[List[str]]:
+        """Chunks for a section, grouped per paragraph (pauses go between groups)."""
+        if section.is_chapter_title:
+            return [[section.text]]
+        groups = [
+            split_into_chunks(paragraph, self.config.max_chunk_length)
+            for paragraph in split_paragraphs(section.text)
+        ]
+        return [group for group in groups if group]
 
     # -- helpers -----------------------------------------------------------
     def _document_text(self) -> str:
@@ -275,8 +295,21 @@ class AudiobookPipeline:
             "exaggeration": round(float(cfg.exaggeration), 6),
             "cfg_weight": round(float(cfg.cfg_weight), 6),
             "chapter_pause": round(float(cfg.chapter_pause), 6),
+            "paragraph_pause": round(float(cfg.paragraph_pause), 6),
+            "speech_rate": round(float(cfg.speech_rate), 6),
             "max_chunk_length": int(cfg.max_chunk_length),
         }
+
+    def _apply_speed(self, samples):
+        """Apply --speech-rate, warning only once if the fallback is used."""
+        factor = float(self.config.speech_rate)
+        if abs(factor - 1.0) < 1e-3:
+            return samples
+        warn = None
+        if not self._speed_warned:
+            warn = lambda message: self._log(f"  ! {message}")  # noqa: E731
+            self._speed_warned = True
+        return change_speed(samples, self._sample_rate, factor, warn=warn)
 
     def _synthesize(self, text: str):
         cfg = self.config
@@ -307,10 +340,8 @@ class AudiobookPipeline:
         failures: List[ChunkFailure] = []
         synthesised = 0
 
-        if section.is_chapter_title:
-            pieces = [section.text]
-        else:
-            pieces = split_into_chunks(section.text, cfg.max_chunk_length)
+        paragraph_chunks = self._paragraph_chunks(section)
+        pieces = [piece for group in paragraph_chunks for piece in group]
         if not pieces:
             return 0, []
 
@@ -318,25 +349,32 @@ class AudiobookPipeline:
             if section.is_chapter_title and cfg.chapter_pause > 0 and index > 0:
                 writer.write_silence(cfg.chapter_pause)
 
-            for number, piece in enumerate(pieces, 1):
-                try:
-                    writer.write(self._synthesize(piece))
-                    synthesised += 1
-                except Exception as exc:
-                    failures.append(
-                        ChunkFailure(
-                            section=index,
-                            chunk=number,
-                            chars=len(piece),
-                            error=str(exc) or exc.__class__.__name__,
-                            preview=piece[:80],
+            number = 0
+            for paragraph_index, group in enumerate(paragraph_chunks):
+                if paragraph_index and cfg.paragraph_pause > 0:
+                    writer.write_silence(cfg.paragraph_pause)
+                for piece in group:
+                    number += 1
+                    try:
+                        writer.write(self._apply_speed(self._synthesize(piece)))
+                        synthesised += 1
+                    except Exception as exc:
+                        failures.append(
+                            ChunkFailure(
+                                section=index,
+                                chunk=number,
+                                chars=len(piece),
+                                error=str(exc) or exc.__class__.__name__,
+                                preview=piece[:80],
+                            )
                         )
-                    )
-                    self._log(f"  ✗ section {index + 1} chunk {number}/{len(pieces)} failed: {exc}")
-                    if stop_on_failure:
-                        return synthesised, failures
-                finally:
-                    self._advance(index, number, len(pieces))
+                        self._log(
+                            f"  ✗ section {index + 1} chunk {number}/{len(pieces)} failed: {exc}"
+                        )
+                        if stop_on_failure:
+                            return synthesised, failures
+                    finally:
+                        self._advance(index, number, len(pieces))
 
             if section.is_chapter_title and cfg.chapter_pause > 0:
                 writer.write_silence(cfg.chapter_pause)
@@ -347,6 +385,87 @@ class AudiobookPipeline:
         self._done = min(self._total, self._done + 1)
         note = "chapter title" if total_in_section == 1 else f"chunk {number}/{total_in_section}"
         self._progress(self._done, max(self._total, 1), f"section {index + 1}: {note}")
+
+    # -- output assembly ---------------------------------------------------
+    def _chapter_groups(self, sections: Sequence[Section]) -> List[List[int]]:
+        """Section indexes grouped per chapter; the preface joins chapter 1."""
+        groups: List[List[int]] = []
+        pending: List[int] = []
+        current: Optional[List[int]] = None
+        for index, section in enumerate(sections):
+            if section.is_chapter_title:
+                if current is not None:
+                    groups.append(current)
+                current = [*pending, index]
+                pending = []
+            elif current is None:
+                pending.append(index)
+            else:
+                current.append(index)
+        if current is not None:
+            groups.append(current)
+        elif pending:
+            groups.append(pending)
+        return [group for group in groups if group]
+
+    def _assemble(
+        self, sink: AudioSink, sections: Sequence[Section], available: Sequence[int]
+    ) -> Tuple[List[Path], int]:
+        """Write the final file(s), optionally one per chapter and/or as MP3."""
+        cfg = self.config
+        output = self.output_path
+        if output.parent != Path(""):
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+        groups = self._chapter_groups(sections)
+        if not cfg.split_chapters or len(groups) <= 1:
+            targets = [(output, list(available))]
+        else:
+            targets = []
+            for number, group in enumerate(groups, 1):
+                indexes = [index for index in group if index in available]
+                if indexes:
+                    targets.append((output.parent / f"chapter{number}.wav", indexes))
+
+        outputs: List[Path] = []
+        total_frames = 0
+        for target, indexes in targets:
+            # Concatenate next to the target, then rename: a crash during the
+            # final copy must not leave a truncated file that looks finished.
+            staging = target.with_suffix(target.suffix + ".tmp")
+            frames = sink.concat(indexes, staging)
+            if frames <= 0:
+                staging.unlink(missing_ok=True)
+                continue
+            os.replace(staging, target)
+            total_frames += frames
+            outputs.append(self._encode_mp3(target) if cfg.mp3 else target)
+
+        if not outputs:
+            raise PipelineError("no audio was generated")
+        return outputs, total_frames
+
+    def _encode_mp3(self, wav_path: Path) -> Path:
+        """Convert with ffmpeg; keep the WAV if that is not possible."""
+        mp3_path = wav_path.with_suffix(".mp3")
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self._log("  ! ffmpeg not found: keeping WAV output")
+            return wav_path
+        completed = subprocess.run(
+            [
+                ffmpeg, "-loglevel", "error", "-y", "-i", str(wav_path),
+                "-codec:a", "libmp3lame", "-q:a", "2", str(mp3_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0 or not mp3_path.exists():
+            detail = (completed.stderr or "").strip().splitlines()
+            self._log(f"  ! MP3 conversion failed ({detail[-1] if detail else 'unknown'}); keeping WAV")
+            return wav_path
+        wav_path.unlink(missing_ok=True)
+        return mp3_path
 
     # -- main entry point --------------------------------------------------
     def run(self) -> JobResult:
@@ -371,10 +490,15 @@ class AudiobookPipeline:
 
         if self.engine is None:
             raise PipelineError("no TTS engine configured")
+        if cfg.speech_rate <= 0:
+            raise PipelineError(f"--speech-rate must be positive, got {cfg.speech_rate}")
+        if cfg.paragraph_pause < 0:
+            raise PipelineError(f"--paragraph-pause must be >= 0, got {cfg.paragraph_pause}")
         self.engine.prepare()
         sample_rate = int(self.engine.sample_rate)
         if sample_rate <= 0:
             raise PipelineError(f"engine {self.engine.name} reports an invalid sample rate")
+        self._sample_rate = sample_rate
 
         sink = AudioSink(self.parts_dir, sample_rate)
         manifest = Manifest(self.parts_dir / "manifest.json", self._signature(sample_rate))
@@ -425,20 +549,13 @@ class AudiobookPipeline:
         if not available:
             raise PipelineError("no audio was generated")
 
-        output = self.output_path
-        if output.parent != Path(""):
-            output.parent.mkdir(parents=True, exist_ok=True)
-        # Concatenate next to the target, then rename: a crash during the final
-        # copy must not leave a truncated file that looks like a finished book.
-        staging = output.with_suffix(output.suffix + ".tmp")
-        frames = sink.concat(available, staging)
-        os.replace(staging, output)
-
-        result.output_path = str(output)
+        outputs, frames = self._assemble(sink, sections, available)
+        result.output_paths = [str(path) for path in outputs]
+        result.output_path = result.output_paths[0] if result.output_paths else None
         result.duration_seconds = frames / float(sample_rate)
         result.elapsed_seconds = time.monotonic() - started
 
-        report = output.with_name(f"{output.stem}.failures.json")
+        report = self.output_path.with_name(f"{self.output_path.stem}.failures.json")
         if result.failures:
             report.write_text(
                 json.dumps([failure.as_dict() for failure in result.failures], indent=2),

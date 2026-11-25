@@ -202,6 +202,7 @@ $RECYCLE.BIN/
 # Text documents (user content)
 my_document.txt
 my_audiobook.wav
+audiobooker.conf
 test_audio.wav
 
 # Voice reference files (user uploads)
@@ -236,4 +237,3 @@ temp_*.py
 *.parts/
 *.failures.json
 *.wav.tmp
-my_audiobook.wav

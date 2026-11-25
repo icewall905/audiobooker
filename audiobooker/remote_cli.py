@@ -6,12 +6,21 @@ import argparse
 from typing import Optional, Sequence
 
 from . import __version__
-from .cli import add_common_arguments, resolve_voice, run_dry, run_pipeline
+from .cli import CONFIG_KEYS, add_common_arguments, resolve_voice, run_dry, run_pipeline
+from .config import load_config, resolve_server_url
 from .engine import DEFAULT_SAMPLE_RATE, RemoteEngine
 from .pipeline import PipelineConfig
 from .report import ConsoleReporter
 
+#: Kept for backwards compatibility; the real default comes from
+#: ``audiobooker.conf`` / ``CHATTERBOX_SERVER_URL`` (see audiobooker.config).
 DEFAULT_SERVER = "http://127.0.0.1:7860"
+
+
+def _config_values(config) -> list:
+    from .config import cli_defaults
+
+    return list(cli_defaults(config).items())
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -21,8 +30,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_common_arguments(parser)
-    parser.add_argument("--server", "-s", default=DEFAULT_SERVER,
-                        help="Chatterbox server URL")
+    parser.add_argument("--server", "-s", default=None,
+                        help="Chatterbox server URL (default: audiobooker.conf [server] url, "
+                             "$CHATTERBOX_SERVER_URL, then 127.0.0.1:7860)")
     parser.add_argument("--temperature", type=float, default=0.8,
                         help="sampling temperature used by the server")
     parser.add_argument("--seed", type=int, default=0,
@@ -33,8 +43,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="sample rate to assume if the server cannot be probed")
     parser.add_argument("--no-probe", action="store_true",
                         help="skip the probe synthesis used to detect the server sample rate")
+    values = {}
+    config = load_config()
+    for key, value in _config_values(config):
+        if key in CONFIG_KEYS:
+            values[key] = value
+    if values:
+        parser.set_defaults(**values)
     args = parser.parse_args(argv)
 
+    server_url = resolve_server_url(args.server, config)
     voice_path = resolve_voice(args)
     config = PipelineConfig(
         document_path=args.document,
@@ -56,7 +74,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     reporter.header(
         f"Remote Chatterbox Audiobook Creator v{__version__}",
         {
-            "Server": args.server,
+            "Server": server_url,
             "Document": args.document,
             "Voice reference": voice_path or "Default voice",
             "Output": args.output,
@@ -71,7 +89,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return run_dry(config)
 
     engine = RemoteEngine(
-        server_url=args.server,
+        server_url=server_url,
         voice_prompt_path=voice_path,
         temperature=args.temperature,
         seed=args.seed,

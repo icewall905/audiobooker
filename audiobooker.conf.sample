@@ -2,13 +2,30 @@
 # Copy this file to `audiobooker.conf` in the project root, or to one of:
 #  - ~/.config/audiobooker/audiobooker.conf
 #  - /etc/audiobooker/audiobooker.conf
+# (or point $AUDIOBOOKER_CONF at it)
 #
-# Values can also be overridden by environment variables, e.g.
+# Command line flags always win over these values.  Environment variables
+# override the [server] section, e.g.
 #   export CHATTERBOX_SERVER_URL="http://10.0.0.5:7860"
 
 [server]
 # URL of your Chatterbox TTS server (Gradio)
 # Examples:
+#   http://127.0.0.1:7860
 #   http://10.0.10.23:7860
-#   http://localhost:7860
-url = http://10.0.10.23:7860
+url = http://127.0.0.1:7860
+
+[defaults]
+# Optional defaults for the CLIs.  Remove the ones you do not need.
+# document = sample_document.txt
+# output = my_audiobook.wav
+# device = cuda
+# exaggeration = 0.5
+# cfg_weight = 0.5
+# chapter_pause = 1.0
+# paragraph_pause = 1.0
+# speech_rate = 1.0
+# max_chunk_length = 300
+# retries = 2
+# split_chapters = false
+# mp3 = false

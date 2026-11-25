@@ -29,6 +29,7 @@ __all__ = [
     "VERSION",
     "CHATTERBOX_SERVER_URL",
     "ChatterboxAPIClient",
+    "create_audiobook",
     "smart_text_split",
     "validate_inputs",
     "main",
@@ -93,6 +94,46 @@ class ChatterboxAPIClient:
 
 def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
     return split_into_chunks(text, max_length)
+
+
+def create_audiobook(
+    document_path: str = "sample_document.txt",
+    voice_prompt_path: Optional[str] = None,
+    output_path: str = "my_audiobook.wav",
+    exaggeration: float = 0.5,
+    cfg_weight: float = 0.5,
+    server_url: Optional[str] = None,
+    chapter_pause: float = 1.0,
+    paragraph_pause: float = 1.0,
+    speech_rate: float = 1.0,
+    max_chunk_length: int = MAX_CHUNK_LENGTH,
+) -> bool:
+    """Legacy 0.0.x entry point, backed by the streaming pipeline."""
+    from audiobooker.config import resolve_server_url
+    from audiobooker.engine import RemoteEngine
+    from audiobooker.pipeline import AudiobookPipeline, PipelineConfig, PipelineError
+
+    url = resolve_server_url(server_url)
+    config = PipelineConfig(
+        document_path=document_path,
+        output_path=output_path,
+        voice_prompt_path=voice_prompt_path,
+        exaggeration=exaggeration,
+        cfg_weight=cfg_weight,
+        chapter_pause=chapter_pause,
+        paragraph_pause=paragraph_pause,
+        speech_rate=speech_rate,
+        max_chunk_length=max_chunk_length,
+    )
+    engine = RemoteEngine(server_url=url, voice_prompt_path=voice_prompt_path)
+    try:
+        result = AudiobookPipeline(config, engine=engine, log=print).run()
+    except PipelineError as exc:
+        print(f"Error: {exc}")
+        return False
+    for line in result.summary_lines():
+        print(line)
+    return result.complete
 
 
 if __name__ == "__main__":

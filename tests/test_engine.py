@@ -72,3 +72,115 @@ def test_remote_engine_rejects_sample_rate_mismatch(monkeypatch):
 def test_engine_base_class_is_abstract():
     with pytest.raises(TypeError):
         Engine()  # type: ignore[abstract]
+
+
+# --- SSE transport and payload variants ------------------------------------
+class FakeStreamResponse:
+    """Minimal stand-in for a requests streaming response."""
+
+    def __init__(self, lines, status_code=200, content_type="text/event-stream"):
+        self._lines = lines
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+
+    def iter_lines(self, decode_unicode=False):
+        return iter(self._lines)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def test_parse_stream_returns_the_complete_payload():
+    stream = FakeStreamResponse(
+        [
+            "event: generating",
+            'data: [{"status": "halfway"}]',
+            "",
+            "event: complete",
+            'data: [{"path": "/tmp/out.wav"}]',
+            "",
+        ]
+    )
+
+    assert RemoteEngine._parse_stream(stream) == [{"path": "/tmp/out.wav"}]
+
+
+def test_parse_stream_surfaces_server_errors():
+    stream = FakeStreamResponse(["event: error", 'data: {"error": "model exploded"}'])
+
+    with pytest.raises(Exception, match="model exploded"):
+        RemoteEngine._parse_stream(stream)
+
+
+def test_parse_stream_falls_back_to_the_last_payload():
+    stream = FakeStreamResponse(['data: [{"path": "/tmp/out.wav"}]'])
+
+    assert RemoteEngine._parse_stream(stream) == [{"path": "/tmp/out.wav"}]
+
+
+def test_parse_stream_without_data_raises():
+    with pytest.raises(Exception, match="without a result"):
+        RemoteEngine._parse_stream(FakeStreamResponse(["event: generating"]))
+
+
+def test_audio_reference_variants():
+    engine = RemoteEngine("http://server:7860")
+
+    assert engine._audio_reference([{"path": "/tmp/a.wav"}]) == (
+        "url",
+        "http://server:7860/file=/tmp/a.wav",
+    )
+    assert engine._audio_reference([{"url": "http://cdn/a.wav"}]) == ("url", "http://cdn/a.wav")
+    kind, value = engine._audio_reference(["data:audio/wav;base64,AAAA"])
+    assert kind == "base64" and value.startswith("data:audio")
+    assert engine._audio_reference(["clip.wav"]) == ("url", "http://server:7860/file=clip.wav")
+
+
+def test_audio_reference_without_audio_raises():
+    engine = RemoteEngine("http://server:7860")
+
+    with pytest.raises(Exception, match="no audio"):
+        engine._audio_reference([{"status": "queued"}])
+
+
+def test_decode_payload_accepts_a_base64_data_uri():
+    import base64
+
+    payload_wav = make_wav(np.zeros(50, dtype="<i2"), 16000)
+    encoded = "data:audio/wav;base64," + base64.b64encode(payload_wav).decode()
+    engine = RemoteEngine("http://server:7860")
+
+    class NoFetch:
+        def get(self, *args, **kwargs):
+            raise AssertionError("should not fetch a URL for inline audio")
+
+    samples, sample_rate = engine._decode_payload(NoFetch(), [encoded])
+
+    assert sample_rate == 16000
+    assert samples.shape == (50,)
+
+
+def test_read_result_prefers_sse(monkeypatch):
+    engine = RemoteEngine("http://server:7860")
+    stream = FakeStreamResponse(["event: complete", 'data: [{"path": "/tmp/a.wav"}]'])
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return stream
+
+    assert engine._read_result(Session(), "http://server/status") == [{"path": "/tmp/a.wav"}]
+
+
+def test_read_result_falls_back_to_polling(monkeypatch):
+    engine = RemoteEngine("http://server:7860")
+    plain = FakeStreamResponse([], content_type="application/json")
+    monkeypatch.setattr(engine, "_poll", lambda session, url: ["polled"])
+
+    class Session:
+        def get(self, *args, **kwargs):
+            return plain
+
+    assert engine._read_result(Session(), "http://server/status") == ["polled"]

@@ -2,7 +2,9 @@
 
 import dataclasses
 import json
+import shutil
 import wave
+from pathlib import Path
 
 import pytest
 from fake_engine import CountingFailer, FakeEngine
@@ -250,3 +252,124 @@ def test_keyboard_interrupt_keeps_finished_sections(tmp_path):
     assert result.complete
     assert result.chunks_reused == 2
     assert not (tmp_path / "book.wav.tmp").exists()
+
+
+# --- upstream features: paragraph pauses, speech rate, chapters, MP3 -------
+PARAGRAPH_DOC = """Chapter 1: Pauses
+
+First paragraph of the chapter.
+
+Second paragraph follows.
+
+Third paragraph closes it."""
+
+
+def test_paragraph_pauses_add_silence_between_paragraphs(tmp_path):
+    without = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=0.0,
+                          output_path=str(tmp_path / "none.wav"))
+    with_pause = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=0.5,
+                             output_path=str(tmp_path / "pause.wav"))
+
+    base = AudiobookPipeline(without, engine=FakeEngine()).run()
+    paused = AudiobookPipeline(with_pause, engine=FakeEngine()).run()
+
+    added = paused.duration_seconds - base.duration_seconds
+    assert added == pytest.approx(2 * 0.5, abs=0.01)  # three paragraphs, two gaps
+
+
+def test_paragraph_pause_does_not_change_the_chunk_count(tmp_path):
+    plain = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=0.0)
+    paused = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=2.0)
+
+    assert AudiobookPipeline(plain).plan()[1] == AudiobookPipeline(paused).plan()[1]
+
+
+def test_chunks_are_grouped_per_paragraph(tmp_path):
+    cfg = make_config(tmp_path, document_text=PARAGRAPH_DOC)
+
+    _, counts = AudiobookPipeline(cfg).plan()
+
+    # 1 heading + 3 paragraph chunks
+    assert counts == [1, 3]
+
+
+def test_speech_rate_shortens_the_audio(tmp_path):
+    # silence is not sped up, so measure with the pauses turned off
+    normal = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=0.0,
+                         chapter_pause=0.0, output_path=str(tmp_path / "normal.wav"))
+    fast = make_config(tmp_path, document_text=PARAGRAPH_DOC, paragraph_pause=0.0,
+                       chapter_pause=0.0, speech_rate=2.0,
+                       output_path=str(tmp_path / "fast.wav"))
+
+    base = AudiobookPipeline(normal, engine=FakeEngine()).run()
+    quicker = AudiobookPipeline(fast, engine=FakeEngine()).run()
+
+    assert quicker.duration_seconds == pytest.approx(base.duration_seconds / 2, rel=0.05)
+
+
+def test_speech_rate_is_part_of_the_checkpoint_signature(tmp_path):
+    base = make_config(tmp_path, keep_parts=True)
+    AudiobookPipeline(base, engine=FakeEngine()).run()
+
+    changed = dataclasses.replace(base, speech_rate=1.5)
+    result = AudiobookPipeline(changed, engine=FakeEngine()).run()
+
+    assert result.chunks_synthesized == result.chunks_total
+
+
+def test_split_chapters_writes_one_file_per_chapter(tmp_path):
+    cfg = make_config(tmp_path, split_chapters=True)
+
+    result = AudiobookPipeline(cfg, engine=FakeEngine()).run()
+
+    assert result.complete
+    assert [Path(path).name for path in result.output_paths] == ["chapter1.wav", "chapter2.wav"]
+    for path in result.output_paths:
+        assert Path(path).exists()
+        assert Path(path).stat().st_size > 44
+    assert not (tmp_path / "book.wav").exists()
+
+
+def test_split_chapters_with_a_single_chapter_uses_the_output_name(tmp_path):
+    single = "Chapter 1: Only\n\nOne body."
+    cfg = make_config(tmp_path, document_text=single, split_chapters=True)
+
+    result = AudiobookPipeline(cfg, engine=FakeEngine()).run()
+
+    assert [Path(path).name for path in result.output_paths] == ["book.wav"]
+
+
+def test_chapter_groups_merge_the_preface_into_chapter_one(tmp_path):
+    document = "A short preface.\n\nChapter 1: One\n\nBody one.\n\nChapter 2: Two\n\nBody two."
+    cfg = make_config(tmp_path, document_text=document, split_chapters=True, keep_parts=True)
+
+    result = AudiobookPipeline(cfg, engine=FakeEngine()).run()
+    sections, _ = AudiobookPipeline(cfg).plan()
+    groups = AudiobookPipeline(cfg)._chapter_groups(sections)
+
+    assert len(groups) == 2
+    assert groups[0][0] == 0  # the preface body stays with chapter 1
+    assert len(result.output_paths) == 2
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_mp3_output_replaces_the_wav(tmp_path):
+    cfg = make_config(tmp_path, mp3=True)
+
+    result = AudiobookPipeline(cfg, engine=FakeEngine()).run()
+
+    assert result.complete
+    assert result.output_path.endswith(".mp3")
+    assert Path(result.output_path).stat().st_size > 0
+    assert not (tmp_path / "book.wav").exists()
+
+
+def test_mp3_is_part_of_the_output_mode_only_not_the_signature(tmp_path):
+    base = make_config(tmp_path, keep_parts=True)
+    AudiobookPipeline(base, engine=FakeEngine()).run()
+
+    engine = FakeEngine()
+    result = AudiobookPipeline(dataclasses.replace(base, mp3=False), engine=engine).run()
+
+    assert engine.calls == []  # rendering was reused
+    assert result.chunks_reused == result.chunks_total

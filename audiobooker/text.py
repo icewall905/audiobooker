@@ -191,6 +191,16 @@ def hard_split(text: str, max_length: int) -> List[str]:
     return parts
 
 
+def split_paragraphs(text: str) -> List[str]:
+    """Normalised, non-empty paragraphs (blank-line separated)."""
+    paragraphs: List[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        normalised = re.sub(r"\s+", " ", block).strip()
+        if normalised and _has_words(normalised):
+            paragraphs.append(normalised)
+    return paragraphs
+
+
 def split_into_chunks(text: str, max_length: int = DEFAULT_MAX_CHUNK_LENGTH) -> List[str]:
     """Split text into chunks that never exceed ``max_length`` characters.
 
@@ -203,11 +213,7 @@ def split_into_chunks(text: str, max_length: int = DEFAULT_MAX_CHUNK_LENGTH) -> 
         raise ValueError(f"max_length must be >= {MIN_CHUNK_LENGTH}, got {max_length}")
 
     chunks: List[str] = []
-    for paragraph in re.split(r"\n\s*\n", text):
-        normalised = re.sub(r"\s+", " ", paragraph).strip()
-        if not normalised or not _has_words(normalised):
-            continue
-
+    for normalised in split_paragraphs(text):
         if len(normalised) <= max_length:
             chunks.append(normalised)
             continue

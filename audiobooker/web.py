@@ -55,7 +55,9 @@ def generate_audiobook(
     exaggeration: float = 0.5,
     cfg_weight: float = 0.5,
     chapter_pause: float = 1.0,
+    paragraph_pause: float = 1.0,
     max_chunk_length: int = DEFAULT_MAX_CHUNK_LENGTH,
+    speech_rate: float = 1.0,
     progress: Optional[Callable] = None,
 ) -> Tuple[Optional[str], str]:
     """Render one job. Returns ``(audio_path, status_text)``.
@@ -99,7 +101,9 @@ def generate_audiobook(
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
             chapter_pause=chapter_pause,
+            paragraph_pause=paragraph_pause,
             max_chunk_length=int(max_chunk_length),
+            speech_rate=speech_rate,
         )
 
         def on_progress(done: int, total: int, message: str) -> None:
@@ -119,7 +123,8 @@ def generate_audiobook(
             f"📖 Text source: {source}",
             f"🎤 Voice: {voice_label}",
             f"⚙️ Exaggeration={exaggeration}, CFG weight={cfg_weight}, "
-            f"Chapter pause={chapter_pause}s, Chunk size={max_chunk_length}",
+            f"Chapter pause={chapter_pause}s, Paragraph pause={paragraph_pause}s, "
+            f"Speech rate={speech_rate}x, Chunk size={max_chunk_length}",
             f"🖥️ Device: {getattr(engine, 'device', engine.name)}",
             "",
         ]
@@ -192,9 +197,15 @@ def build_interface():
                 chapter_pause = gr.Slider(0.0, 5.0, value=1.0, step=0.5,
                                           label="Chapter Pause (seconds)",
                                           info="Pause duration before and after chapter titles")
+                paragraph_pause = gr.Slider(0.0, 3.0, value=1.0, step=0.25,
+                                            label="Paragraph Pause (seconds)",
+                                            info="Silence inserted between paragraphs")
                 max_chunk_length = gr.Slider(100, 600, value=DEFAULT_MAX_CHUNK_LENGTH, step=50,
                                              label="Max chunk length (characters)",
                                              info="Smaller = more stable, slower")
+                speech_rate = gr.Slider(0.5, 2.0, value=1.0, step=0.05,
+                                        label="Speech Rate",
+                                        info="1.0 is unchanged; pitch is preserved with torchaudio")
 
         with gr.Row():
             generate_btn = gr.Button("🎧 Generate Audiobook", variant="primary", size="lg")
@@ -206,7 +217,7 @@ def build_interface():
                                        max_lines=25, show_copy_button=True)
 
         inputs = [text_input, document_file, voice_file, exaggeration, cfg_weight,
-                  chapter_pause, max_chunk_length]
+                  chapter_pause, paragraph_pause, max_chunk_length, speech_rate]
         generate_btn.click(
             fn=generate_audiobook,
             inputs=inputs,
@@ -214,9 +225,11 @@ def build_interface():
             show_progress=True,
         )
         clear_btn.click(
-            fn=lambda: (None, None, None, 0.5, 0.5, 1.0, DEFAULT_MAX_CHUNK_LENGTH, None, ""),
+            fn=lambda: (None, None, None, 0.5, 0.5, 1.0, 1.0, DEFAULT_MAX_CHUNK_LENGTH, 1.0,
+                        None, ""),
             outputs=[text_input, document_file, voice_file, exaggeration, cfg_weight,
-                     chapter_pause, max_chunk_length, audio_output, status_output],
+                     chapter_pause, paragraph_pause, max_chunk_length, speech_rate,
+                     audio_output, status_output],
         )
 
         gr.Markdown("## 📚 Example Texts")
@@ -227,7 +240,7 @@ def build_interface():
                     "intelligence had become as common as smartphones once were.\n\n"
                     "Chapter 2: The Discovery\n\nThe algorithm she had been working on "
                     "began to exhibit behaviour that defied explanation.",
-                    None, None, 0.6, 0.4, 1.5, DEFAULT_MAX_CHUNK_LENGTH,
+                    None, None, 0.6, 0.4, 1.5, 1.0, DEFAULT_MAX_CHUNK_LENGTH, 1.0,
                 ],
             ],
             inputs=inputs,
