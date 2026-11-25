@@ -1,5 +1,10 @@
 # Audiobook Creator with Chatterbox TTS
 
+> **Updated in 0.2.0** — the commands are now `audiobook`, `audiobook-remote` and
+> `audiobook-web` (installed by `pip install -e .`). `python app.py …` still works.
+> See [README.md](README.md) for the new flags: `--dry-run`, `--max-chunk-length`,
+> `--retries`, `--strict`, `--no-resume`, `--keep-parts`, `--chapter-pattern`.
+
 This script creates natural-sounding audiobooks from text documents using Resemble AI's Chatterbox TTS model.
 
 ## Features

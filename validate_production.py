@@ -115,6 +115,21 @@ def test_audio_system():
     
     return True
 
+def test_text_pipeline():
+    """Check chapter/chunk detection and the CLI contract without loading a model."""
+    print("\n=== Text Pipeline Test ===")
+
+    cmd = "python app.py --dry-run --document sample_document.txt --max-chunk-length 100"
+    output = run_command(cmd, "Dry-run text pipeline", check=False)
+    if not output or "Total:" not in output:
+        print("❌ Dry-run did not report a plan (is --max-chunk-length supported?)")
+        return False
+
+    sections_line = [line for line in output.splitlines() if line.startswith("Total:")]
+    print(f"✅ {sections_line[0] if sections_line else 'plan reported'}")
+    return True
+
+
 def test_audiobook_creation():
     """Test actual audiobook creation with a small sample."""
     print("\n=== Audiobook Creation Test ===")
@@ -188,6 +203,7 @@ def main():
         ("GPU Setup", test_gpu_setup),
         ("Dependencies", test_dependencies),
         ("Audio System", test_audio_system),
+        ("Text Pipeline", test_text_pipeline),
         ("Launcher", test_launcher),
     ]
     

@@ -1,7 +1,7 @@
-# Core dependencies for Chatterbox TTS audiobook creator
+# Local (GPU/CPU) stack for the audiobook creator
+# Preferred: pip install -e ".[local,web]"
 chatterbox-tts
 torch>=1.13.0
 torchaudio>=0.13.0
-
-# Web interface dependencies
+numpy>=1.21.0
 gradio>=4.0.0

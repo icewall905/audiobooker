@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiobooker"
+description = "Create audiobooks from text documents with Chatterbox TTS"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "audiobooker contributors" }]
+keywords = ["tts", "audiobook", "chatterbox", "text-to-speech"]
+dynamic = ["version"]
+dependencies = ["numpy>=1.21.0"]
+
+[project.optional-dependencies]
+local = ["chatterbox-tts", "torch>=1.13.0", "torchaudio>=0.13.0"]
+remote = ["requests>=2.28.0"]
+web = ["gradio>=4.0.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+audiobook = "audiobooker.cli:main"
+audiobook-remote = "audiobooker.remote_cli:main"
+audiobook-web = "audiobooker.web:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "audiobooker.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["audiobooker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

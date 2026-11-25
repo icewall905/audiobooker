@@ -1,3 +1,4 @@
-# Remote Chatterbox TTS audiobook creator dependencies
+# Remote client only: talks to a Chatterbox server over HTTP
+# Preferred: pip install -e ".[remote]"
 requests>=2.28.0
 numpy>=1.21.0

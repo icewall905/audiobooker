@@ -231,3 +231,9 @@ debug_*.py
 temp_*.py
 
 
+
+# audiobooker outputs
+*.parts/
+*.failures.json
+*.wav.tmp
+my_audiobook.wav

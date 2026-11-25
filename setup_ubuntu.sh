@@ -1,778 +1,131 @@
 #!/bin/bash
-set -e  # Exit on any error
+#
+# Ubuntu setup for the audiobook creator.
+#
+#   ./setup_ubuntu.sh                 # install into ./audiobooker
+#   ./setup_ubuntu.sh --dir ~/tools   # install into ~/tools/audiobooker
+#   ./setup_ubuntu.sh --cpu           # skip CUDA, install CPU torch
+#   ./setup_ubuntu.sh --skip-apt      # do not touch apt
+#
+# The script installs the package (see pyproject.toml) instead of copying a
+# second copy of app.py around, so the installed program and the repository can
+# no longer drift apart.
+set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+info()  { echo -e "${BLUE}==>${NC} $*"; }
+ok()    { echo -e "${GREEN}✔${NC} $*"; }
+warn()  { echo -e "${YELLOW}!${NC} $*"; }
+fail()  { echo -e "${RED}✘${NC} $*" >&2; exit 1; }
 
-# Configuration
-# If we're in a git repo with app.py, install directly here, otherwise create audiobooker subdirectory
-if [ -f "app.py" ] && [ -d ".git" ]; then
-    INSTALL_DIR="$(pwd)"
+REPO_URL="https://github.com/icewall905/audiobooker.git"
+REF="main"
+INSTALL_ROOT="$(pwd)"
+USE_CPU=0
+SKIP_APT=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dir)      INSTALL_ROOT="${2:?--dir needs a value}"; shift 2 ;;
+        --repo)     REPO_URL="${2:?--repo needs a value}"; shift 2 ;;
+        --ref)      REF="${2:?--ref needs a value}"; shift 2 ;;
+        --cpu)      USE_CPU=1; shift ;;
+        --skip-apt) SKIP_APT=1; shift ;;
+        -h|--help)  sed -n '2,10p' "$0"; exit 0 ;;
+        *)          fail "unknown option: $1" ;;
+    esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---------------------------------------------------------------- source tree
+if [ -f "$SCRIPT_DIR/pyproject.toml" ]; then
+    PROJECT_DIR="$SCRIPT_DIR"
+    info "Using the existing checkout at $PROJECT_DIR"
 else
-    INSTALL_DIR="$(pwd)/audiobooker"
+    PROJECT_DIR="$INSTALL_ROOT/audiobooker"
+    if [ -f "$PROJECT_DIR/pyproject.toml" ]; then
+        info "Reusing the existing install at $PROJECT_DIR"
+    else
+        info "Cloning $REPO_URL into $PROJECT_DIR"
+        command -v git >/dev/null || fail "git is required to clone the repository"
+        mkdir -p "$INSTALL_ROOT"
+        git clone --depth 1 --branch "$REF" "$REPO_URL" "$PROJECT_DIR"
+    fi
 fi
-VENV_NAME="audiobooker-env"
-PYTHON_VERSION="3.8"
+cd "$PROJECT_DIR"
 
-echo -e "${BLUE}=== Chatterbox Audiobook Creator Setup ===${NC}"
-echo "This script will set up the audiobook creator on your Ubuntu server."
-echo "Installation directory: $INSTALL_DIR"
-echo ""
+# ------------------------------------------------------------------- apt deps
+if [ "$SKIP_APT" -eq 0 ]; then
+    info "Installing system packages (needs sudo)"
+    sudo apt-get update
+    sudo apt-get install -y \
+        python3 python3-venv python3-pip python3-dev \
+        git curl ffmpeg build-essential libsndfile1
+fi
 
-# Function to print status
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' \
+    || fail "python 3.9 or newer is required"
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if running on Ubuntu
-check_ubuntu() {
-    if [[ ! -f /etc/lsb-release ]] || ! grep -q "Ubuntu" /etc/lsb-release; then
-        print_warning "This script is designed for Ubuntu. Continuing anyway..."
-    else
-        print_status "Ubuntu detected ✓"
-    fi
-}
-
-# Check for GPU
-check_gpu() {
-    if command -v nvidia-smi &> /dev/null; then
-        print_status "NVIDIA GPU detected:"
-        nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits | head -1
-    else
-        print_warning "NVIDIA GPU not detected. CPU mode will be used (much slower)."
-    fi
-}
-
-# Update system packages
-update_system() {
-    print_status "Updating system packages..."
-    sudo apt update
-    sudo apt upgrade -y
-}
-
-# Install system dependencies
-install_system_deps() {
-    print_status "Installing system dependencies..."
-    sudo apt install -y \
-        python3 \
-        python3-pip \
-        python3-venv \
-        python3-dev \
-        git \
-        curl \
-        wget \
-        build-essential \
-        ffmpeg \
-        libsndfile1 \
-        portaudio19-dev \
-        python3-pyaudio
-}
-
-# Install CUDA support (if GPU available)
-install_cuda_support() {
-    if command -v nvidia-smi &> /dev/null; then
-        print_status "Installing CUDA support for PyTorch..."
-        # This will be handled in the pip install step with the right PyTorch version
-    else
-        print_status "Skipping CUDA installation (no GPU detected)"
-    fi
-}
-
-# Create installation directory
-create_install_dir() {
-    print_status "Creating installation directory..."
-    mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
-}
-
-# Create virtual environment
-create_venv() {
-    print_status "Creating Python virtual environment..."
-    python3 -m venv "$VENV_NAME"
-    source "$VENV_NAME/bin/activate"
-    
-    # Upgrade pip
-    pip install --upgrade pip setuptools wheel
-}
-
-# Install Python dependencies
-install_python_deps() {
-    print_status "Installing Python dependencies..."
-    source "$VENV_NAME/bin/activate"
-    
-    # Install PyTorch with CUDA support if available
-    if command -v nvidia-smi &> /dev/null; then
-        print_status "Installing PyTorch with CUDA support..."
-        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
-    else
-        print_status "Installing PyTorch CPU version..."
-        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-    fi
-    
-    # Install Chatterbox TTS
-    print_status "Installing Chatterbox TTS..."
-    pip install chatterbox-tts
-    
-    # Install additional dependencies
-    pip install numpy requests argparse pathlib gradio
-    
-    # Install from requirements.txt if it exists
-    if [ -f "requirements.txt" ]; then
-        print_status "Installing from requirements.txt..."
-        pip install -r requirements.txt
-    fi
-}
-
-# Download audiobook creator scripts
-download_scripts() {
-    print_status "Setting up audiobook creator scripts..."
-    
-    # Check if we're in a git repository with existing files
-    if [ -f "app.py" ] && [ -d ".git" ]; then
-        print_status "Found existing app.py in git repository - using existing file ✓"
-        print_status "This preserves any local customizations and latest features"
-    else
-        print_status "Creating app.py script..."
-        # Create the main app.py script only if it doesn't exist or we're not in a git repo
-        cat > app.py << 'EOF'
-import torch
-import torchaudio as ta
-from chatterbox.tts import ChatterboxTTS
-import re
-import os
-import sys
-from pathlib import Path
-import argparse
-from typing import List, Optional
-
-# --- Configuration ---
-DOCUMENT_PATH = "sample_document.txt" 
-VOICE_PROMPT_PATH = None  # Set to your voice reference file path if available
-OUTPUT_PATH = "my_audiobook.wav" 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MAX_CHUNK_LENGTH = 300
-
-def detect_chapters(text: str) -> List[str]:
-    """Detect chapters in text based on common patterns."""
-    # Common chapter patterns
-    chapter_patterns = [
-        r'^\s*Chapter\s+\d+',
-        r'^\s*CHAPTER\s+\d+',
-        r'^\s*Ch\.\s*\d+',
-        r'^\s*\d+\.\s*[A-Z]',
-        r'^\s*Part\s+\d+',
-        r'^\s*PART\s+\d+',
-        r'^\s*Section\s+\d+',
-        r'^\s*Book\s+\d+'
-    ]
-    
-    lines = text.split('\n')
-    chapter_indices = [0]  # Always start with beginning
-    
-    for i, line in enumerate(lines):
-        for pattern in chapter_patterns:
-            if re.match(pattern, line.strip(), re.IGNORECASE):
-                if i not in chapter_indices:
-                    chapter_indices.append(i)
-                break
-    
-    # Split text into chapters
-    chapters = []
-    for i in range(len(chapter_indices)):
-        start_idx = chapter_indices[i]
-        end_idx = chapter_indices[i + 1] if i + 1 < len(chapter_indices) else len(lines)
-        chapter_text = '\n'.join(lines[start_idx:end_idx]).strip()
-        if chapter_text:
-            chapters.append(chapter_text)
-    
-    return chapters if len(chapters) > 1 else [text]
-
-def smart_text_split(text: str, max_length: int = MAX_CHUNK_LENGTH) -> List[str]:
-    """Intelligently split text into chunks, respecting sentence boundaries."""
-    paragraphs = re.split(r'\n\s*\n', text)
-    chunks = []
-    
-    for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-            
-        if len(paragraph) <= max_length:
-            chunks.append(paragraph)
-        else:
-            sentences = re.split(r'(?<=[.!?])\s+', paragraph)
-            current_chunk = ""
-            
-            for sentence in sentences:
-                if current_chunk and len(current_chunk + " " + sentence) > max_length:
-                    chunks.append(current_chunk.strip())
-                    current_chunk = sentence
-                else:
-                    current_chunk = current_chunk + " " + sentence if current_chunk else sentence
-            
-            if current_chunk.strip():
-                chunks.append(current_chunk.strip())
-    
-    return chunks
-
-def validate_inputs(document_path: str, voice_prompt_path: Optional[str] = None) -> bool:
-    """Validate that required input files exist."""
-    if not os.path.exists(document_path):
-        print(f"Error: Document file '{document_path}' not found.")
-        return False
-    
-    if voice_prompt_path and not os.path.exists(voice_prompt_path):
-        print(f"Error: Voice reference file '{voice_prompt_path}' not found.")
-        return False
-    
-    return True
-
-def create_audiobook(document_path: str = DOCUMENT_PATH, 
-                   voice_prompt_path: Optional[str] = VOICE_PROMPT_PATH,
-                   output_path: str = OUTPUT_PATH,
-                   exaggeration: float = 0.5,
-                   cfg_weight: float = 0.5,
-                   device: str = DEVICE,
-                   chapter_pause: float = 1.0):
-    """Create audiobook from document using Chatterbox TTS."""
-    
-    if not validate_inputs(document_path, voice_prompt_path):
-        return False
-    
-    print(f"Using device: {device}")
-    print(f"Voice reference: {'Yes' if voice_prompt_path else 'No (using default voice)'}")
-    print(f"Chapter pause: {chapter_pause}s")
-
-    # Initialize the Chatterbox model
-    print("Loading ChatterboxTTS model...")
-    try:
-        model = ChatterboxTTS.from_pretrained(device=device)
-        print("Model loaded successfully.")
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        return False
-
-    # Load and process the document
-    print(f"Loading document from {document_path}...")
-    try:
-        with open(document_path, 'r', encoding='utf-8') as f:
-            full_text = f.read()
-    except Exception as e:
-        print(f"Error reading file: {e}")
-        return False
-
-    # Detect chapters
-    chapters = detect_chapters(full_text)
-    print(f"Detected {len(chapters)} chapter(s)")
-
-    # Process each chapter
-    all_audio_chunks = []
-    total_chunks = 0
-    chapter_stats = []
-    
-    for chapter_idx, chapter_text in enumerate(chapters, 1):
-        print(f"\n--- Processing Chapter {chapter_idx}/{len(chapters)} ---")
-        
-        # Split chapter into chunks
-        text_chunks = smart_text_split(chapter_text, max_length=MAX_CHUNK_LENGTH)
-        total_chunks += len(text_chunks)
-        print(f"Chapter {chapter_idx} split into {len(text_chunks)} chunks.")
-        
-        if not text_chunks:
-            print(f"No text found in chapter {chapter_idx}.")
-            continue
-
-        # Synthesize each chunk in the chapter
-        chapter_audio_chunks = []
-        print(f"Generating audio for chapter {chapter_idx}...")
-        
-        for i, chunk in enumerate(text_chunks, 1):
-            print(f"  Chunk {i}/{len(text_chunks)} ({len(chunk)} chars)...")
-            try:
-                if voice_prompt_path:
-                    wav = model.generate(
-                        chunk,
-                        audio_prompt_path=voice_prompt_path,
-                        exaggeration=exaggeration,
-                        cfg_weight=cfg_weight
-                    )
-                else:
-                    wav = model.generate(
-                        chunk,
-                        exaggeration=exaggeration,
-                        cfg_weight=cfg_weight
-                    )
-                
-                chapter_audio_chunks.append(wav.squeeze(0).cpu())
-                
-            except Exception as e:
-                print(f"  Error generating audio for chunk {i}: {e}")
-                continue
-
-        if chapter_audio_chunks:
-            # Concatenate chapter audio
-            chapter_audio = torch.cat(chapter_audio_chunks)
-            all_audio_chunks.append(chapter_audio)
-            
-            # Calculate chapter statistics
-            chapter_duration = len(chapter_audio) / model.sr
-            chapter_stats.append({
-                'chapter': chapter_idx,
-                'chunks': len(text_chunks),
-                'duration': chapter_duration,
-                'chars': len(chapter_text)
-            })
-            
-            print(f"Chapter {chapter_idx} complete: {chapter_duration:.1f}s")
-            
-            # Add pause between chapters (except for the last one)
-            if chapter_idx < len(chapters) and chapter_pause > 0:
-                pause_samples = int(chapter_pause * model.sr)
-                pause_audio = torch.zeros(pause_samples)
-                all_audio_chunks.append(pause_audio)
-                print(f"Added {chapter_pause}s pause after chapter {chapter_idx}")
-
-    # Final concatenation and save
-    if not all_audio_chunks:
-        print("No audio was generated. Exiting.")
-        return False
-
-    print("\nConcatenating all audio...")
-    try:
-        full_audio = torch.cat(all_audio_chunks)
-        
-        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
-        
-        print(f"Saving final audiobook to {output_path} with sample rate {model.sr} Hz...")
-        ta.save(output_path, full_audio.unsqueeze(0), model.sr)
-        
-        # Print detailed statistics
-        total_duration = len(full_audio) / model.sr
-        total_minutes = total_duration / 60
-        total_chars = sum(stat['chars'] for stat in chapter_stats)
-        
-        print(f"\n✅ Audiobook creation complete! (v0.0.2)")
-        print(f"📊 Statistics:")
-        print(f"   Total chapters: {len(chapters)}")
-        print(f"   Total chunks: {total_chunks}")
-        print(f"   Total characters: {total_chars:,}")
-        print(f"   Total duration: {total_minutes:.1f} minutes ({total_duration:.1f} seconds)")
-        print(f"   Average speaking rate: {total_chars / total_duration:.1f} chars/second")
-        print(f"   Output file: {output_path}")
-        
-        if len(chapters) > 1:
-            print(f"\n📖 Chapter breakdown:")
-            for stat in chapter_stats:
-                print(f"   Chapter {stat['chapter']}: {stat['duration']:.1f}s ({stat['chunks']} chunks, {stat['chars']:,} chars)")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error saving audiobook: {e}")
-        return False
-
-def main():
-    """Main function with command line argument support."""
-    parser = argparse.ArgumentParser(description="Create an audiobook using Chatterbox TTS")
-    parser.add_argument("--document", "-d", default=DOCUMENT_PATH,
-                       help="Path to the text document")
-    parser.add_argument("--voice", "-v", default=VOICE_PROMPT_PATH,
-                       help="Path to voice reference audio (optional)")
-    parser.add_argument("--output", "-o", default=OUTPUT_PATH,
-                       help="Path for the output audiobook")
-    parser.add_argument("--exaggeration", "-e", type=float, default=0.5,
-                       help="Emotion exaggeration (0.0-1.0, default: 0.5)")
-    parser.add_argument("--cfg-weight", "-c", type=float, default=0.5,
-                       help="CFG weight (0.0-1.0, default: 0.5)")
-    parser.add_argument("--device", default=DEVICE,
-                       help="Device to use (cuda/cpu)")
-    parser.add_argument("--no-voice", action="store_true",
-                       help="Don't use voice reference (use default voice)")
-    parser.add_argument("--chapter-pause", type=float, default=1.0,
-                       help="Pause duration between chapters in seconds (default: 1.0)")
-    
-    args = parser.parse_args()
-    
-    # Auto-detect example.wav if no voice specified and file exists
-    voice_path = args.voice
-    if not args.no_voice and not voice_path and os.path.exists("example.wav"):
-        voice_path = "example.wav"
-        print("🎤 Automatically detected and using example.wav as voice reference")
-    elif args.no_voice:
-        voice_path = None
-    
-    print("=== Chatterbox Audiobook Creator v0.0.2 ===")
-    print(f"Document: {args.document}")
-    print(f"Voice reference: {voice_path if voice_path else 'Default voice'}")
-    print(f"Output: {args.output}")
-    print(f"Exaggeration: {args.exaggeration}")
-    print(f"CFG Weight: {args.cfg_weight}")
-    print(f"Device: {args.device}")
-    print(f"Chapter pause: {args.chapter_pause}s")
-    print("=" * 45)
-    
-    success = create_audiobook(
-        document_path=args.document,
-        voice_prompt_path=voice_path,
-        output_path=args.output,
-        exaggeration=args.exaggeration,
-        cfg_weight=args.cfg_weight,
-        device=args.device,
-        chapter_pause=args.chapter_pause
-    )
-    
-    if success:
-        print("\n✅ Audiobook creation completed successfully!")
-    else:
-        print("\n❌ Audiobook creation failed.")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-EOF
-    fi
-    
-    # Create sample document (only if it doesn't exist)
-    if [ ! -f "sample_document.txt" ]; then
-        print_status "Creating sample document..."
-    cat > sample_document.txt << 'EOF'
-Chapter 1: The Beginning
-
-In the heart of a bustling city, where the sounds of traffic and life never ceased, there lived a young woman named Sarah. She had always been fascinated by the stories that surrounded her - the tales whispered in coffee shops, the legends passed down through generations, and the quiet moments of human connection that seemed to happen when she least expected them.
-
-Every morning, Sarah would walk through the same streets, observing the world with the keen eye of someone who understood that every person she passed had their own story to tell. The elderly man feeding pigeons in the park, the mother rushing to catch the bus with her children, the artist sketching silently on a bench - each carried within them a universe of experiences.
-
-Chapter 2: The Discovery
-
-One particular Tuesday, something extraordinary happened. As Sarah made her usual route to work, she noticed a small, leather-bound book lying abandoned on a park bench. The cover was worn and weathered, suggesting it had been well-loved and frequently read. Without thinking, she picked it up and opened it to the first page.
-
-The words that greeted her were unlike anything she had ever read before. They seemed to shimmer and dance across the page, telling a story that felt both completely foreign and intimately familiar. It was as if the book had been waiting specifically for her to find it.
-
-Chapter 3: The Journey Begins
-
-As days turned into weeks, Sarah found herself completely absorbed in the mysterious book. Each page revealed new wonders and challenged her understanding of what was possible in the world. The story spoke of places that existed between the spaces of reality, of people who could step from one world to another with nothing more than a thought and a wish.
-
-The more she read, the more she began to notice strange coincidences in her daily life. People she had never met would smile at her as if they were old friends. Conversations would take unexpected turns that seemed to echo themes from the book. Even the weather seemed to respond to her moods in ways that defied explanation.
-
-And so began Sarah's journey into a world where the boundaries between story and reality were far more fluid than she had ever imagined possible.
-EOF
-    else
-        print_status "Found existing sample_document.txt - keeping existing file ✓"
-    fi
-
-    # Create test script (only if it doesn't exist)
-    if [ ! -f "test_setup.py" ]; then
-        print_status "Creating test script..."
-    cat > test_setup.py << 'EOF'
-#!/usr/bin/env python3
-"""Test script to verify the audiobook creator setup."""
-
-import sys
-import os
-
-def test_imports():
-    """Test that all required imports work."""
-    print("Testing imports...")
-    
-    try:
-        import torch
-        print(f"✅ PyTorch {torch.__version__} imported successfully")
-        print(f"   CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            print(f"   GPU: {torch.cuda.get_device_name()}")
-    except ImportError as e:
-        print(f"❌ PyTorch import failed: {e}")
-        return False
-    
-    try:
-        import torchaudio
-        print(f"✅ TorchAudio {torchaudio.__version__} imported successfully")
-    except ImportError as e:
-        print(f"❌ TorchAudio import failed: {e}")
-        return False
-    
-    try:
-        from chatterbox.tts import ChatterboxTTS
-        print("✅ Chatterbox TTS imported successfully")
-    except ImportError as e:
-        print(f"❌ Chatterbox TTS import failed: {e}")
-        return False
-    
-    return True
-
-def test_files():
-    """Test that required files exist."""
-    files_to_check = ['app.py', 'sample_document.txt']
-    
-    for file in files_to_check:
-        if os.path.exists(file):
-            print(f"✅ {file} exists")
-        else:
-            print(f"❌ {file} missing")
-            return False
-    
-    return True
-
-def main():
-    print("=== Audiobook Creator Setup Test ===\n")
-    
-    if not test_imports():
-        print("\n❌ Import tests failed.")
-        return False
-    
-    if not test_files():
-        print("\n❌ File tests failed.")
-        return False
-    
-    print("\n✅ All tests passed!")
-    print("\nYou can now create audiobooks:")
-    print("  python app.py                                    # Use sample document")
-    print("  python app.py --document your_book.txt          # Use your document")
-    print("  python app.py --voice narrator.wav              # Use voice cloning")
-    
-    return True
-
-if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
-EOF
-        chmod +x test_setup.py
-    else
-        print_status "Found existing test_setup.py - keeping existing file ✓"
-    fi
-
-    # Create start script for easy usage (only if it doesn't exist)
-    if [ ! -f "start.sh" ]; then
-        print_status "Creating start script..."
-    cat > start.sh << 'EOF'
-#!/bin/bash
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Configuration
-VENV_DIR="audiobooker-env"
-CURRENT_DIR=$(pwd)
-
-echo -e "${BLUE}=== Audiobook Creator Startup Script ===${NC}"
-echo ""
-
-# Check if virtual environment exists
+# ------------------------------------------------------------------ venv + pip
+VENV_DIR="$PROJECT_DIR/audiobooker-env"
 if [ ! -d "$VENV_DIR" ]; then
-    echo -e "${RED}❌ Virtual environment not found!${NC}"
-    echo ""
-    echo -e "${YELLOW}To set up the environment, run one of:${NC}"
-    echo "  • Full setup:    ./setup_ubuntu.sh"
-    echo "  • Quick setup:   ./quick_setup.sh"
-    echo "  • Manual setup: python3 -m venv $VENV_DIR && source $VENV_DIR/bin/activate && pip install -r requirements.txt"
-    echo ""
-    exit 1
+    info "Creating virtual environment at $VENV_DIR"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
-
-echo -e "${GREEN}✅ Virtual environment found at: $VENV_DIR${NC}"
-
-# Activate virtual environment
-echo -e "${CYAN}🔄 Activating virtual environment...${NC}"
+# shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+python -m pip install --upgrade pip setuptools wheel >/dev/null
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Environment activated successfully!${NC}"
+if [ "$USE_CPU" -eq 1 ]; then
+    info "Installing CPU builds of torch/torchaudio"
+    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+elif command -v nvidia-smi >/dev/null; then
+    info "NVIDIA GPU detected - installing CUDA builds of torch/torchaudio"
+    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 else
-    echo -e "${RED}❌ Failed to activate environment${NC}"
-    exit 1
+    warn "No NVIDIA GPU detected - installing CPU builds (slower)"
+    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 fi
 
-# Check if app.py exists
-if [ ! -f "app.py" ]; then
-    echo -e "${RED}❌ app.py not found in current directory${NC}"
-    echo "Make sure you're in the correct directory with the audiobook creator files."
-    exit 1
+info "Installing the package (pip install -e .)"
+pip install -e .
+
+info "Installing runtime dependencies"
+# argparse/pathlib are NOT installed: the PyPI versions shadow the stdlib.
+pip install chatterbox-tts gradio requests
+
+# ------------------------------------------------------------------- launcher
+BIN_DIR="$VENV_DIR/bin"
+if ! grep -qs "$BIN_DIR" "$HOME/.bashrc"; then
+    printf '\n# audiobooker\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$HOME/.bashrc"
+    ok "Added $BIN_DIR to PATH in ~/.bashrc (run: source ~/.bashrc)"
 fi
 
-echo -e "${GREEN}✅ app.py found${NC}"
-
-# Check for example.wav
-if [ -f "example.wav" ]; then
-    echo -e "${GREEN}✅ example.wav found - will be auto-detected for voice cloning${NC}"
-    AUTO_VOICE=" (auto-detects example.wav)"
-else
-    echo -e "${YELLOW}ℹ️  No example.wav found - place one here for automatic voice detection${NC}"
-    AUTO_VOICE=""
+# --------------------------------------------------------------------- verify
+info "Verifying the installation"
+if ! "$BIN_DIR/audiobook" --version >/dev/null; then
+    fail "installation check failed: $BIN_DIR/audiobook --version"
 fi
+ok "Installed $("$BIN_DIR/audiobook" --version | head -1)"
+"$BIN_DIR/audiobook" --dry-run --document sample_document.txt >/dev/null \
+    && ok "Text pipeline OK (sample_document.txt parses)"
 
-echo ""
-echo -e "${BLUE}=== Ready to Create Audiobooks! ===${NC}"
-echo ""
-echo -e "${CYAN}📖 Available Documents:${NC}"
-for file in *.txt; do
-    if [ -f "$file" ]; then
-        echo "  • $file"
-    fi
-done
+cat <<EOF
 
-echo ""
-echo -e "${CYAN}🎤 Available Voice Files:${NC}"
-voice_found=false
-for file in *.wav *.mp3 *.m4a *.flac; do
-    if [ -f "$file" ]; then
-        echo "  • $file"
-        voice_found=true
-    fi
-done
-if [ "$voice_found" = false ]; then
-    echo "  • No voice files found (will use default voice)"
-fi
+$(ok "Setup complete")
 
-echo ""
-echo -e "${CYAN}🚀 Usage Examples:${NC}"
-echo ""
-echo -e "${GREEN}Basic Usage:${NC}"
-echo "  python app.py                                          # Uses sample_document.txt$AUTO_VOICE"
-echo "  python app.py --document book.txt                      # Use specific document$AUTO_VOICE"
-echo ""
-echo -e "${GREEN}Voice Cloning:${NC}"
-echo "  python app.py --document book.txt --voice narrator.wav # Use specific voice"
-echo "  python app.py --document book.txt --no-voice          # Force default voice (ignore example.wav)"
-echo ""
-echo -e "${GREEN}Advanced Settings:${NC}"
-echo "  python app.py --document book.txt --exaggeration 0.7  # More expressive"
-echo "  python app.py --document book.txt --cfg-weight 0.3    # Faster speech"
-echo "  python app.py --document book.txt --output my_book.wav # Custom output file"
-echo ""
-echo -e "${GREEN}Global Launcher (if available):${NC}"
-echo "  audiobook --document book.txt --voice narrator.wav    # Use from anywhere"
-echo ""
-echo -e "${CYAN}📋 Quick Commands:${NC}"
-echo "  python app.py --help                                  # Show all options"
-echo "  deactivate                                             # Exit virtual environment"
-echo ""
-echo -e "${YELLOW}💡 Tip: Press Ctrl+C to stop generation if needed${NC}"
-echo ""
+Commands (open a new shell first, or: source ~/.bashrc):
+  audiobook --document book.txt                  # create an audiobook
+  audiobook --document book.txt --dry-run        # inspect chapters/chunks only
+  audiobook --document book.txt                 # re-run to resume a stopped job
+  audiobook-remote --server http://gpu:7860 ...  # use a remote Chatterbox server
+  audiobook-web                                  # Gradio interface on :7860
 
-# Keep the environment active for the user
-echo -e "${GREEN}🎯 Environment is now active! You can run the commands above.${NC}"
-echo -e "${BLUE}   Current directory: $CURRENT_DIR${NC}"
-echo -e "${BLUE}   Virtual env: $VENV_DIR${NC}"
-echo ""
+Install directory: $PROJECT_DIR
+Python environment: $VENV_DIR
+
+Long books stream to disk part by part: an interrupted run resumes where it
+stopped, and re-running after a failure only re-renders the missing sections.
 EOF
-        chmod +x start.sh
-    else
-        print_status "Found existing start.sh - keeping existing file ✓"
-    fi
-}
-
-# Create launcher script
-create_launcher() {
-    print_status "Creating launcher script..."
-    
-    cat > "$INSTALL_DIR/audiobook" << EOF
-#!/bin/bash
-# Audiobook Creator Launcher
-cd "$INSTALL_DIR"
-source "$VENV_NAME/bin/activate"
-python app.py "\$@"
-EOF
-    
-    chmod +x "$INSTALL_DIR/audiobook"
-    
-    # Add to PATH
-    if ! grep -q "$INSTALL_DIR" ~/.bashrc; then
-        echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> ~/.bashrc
-        print_status "Added launcher to PATH in ~/.bashrc"
-    fi
-}
-
-# Test installation
-test_installation() {
-    print_status "Testing installation..."
-    cd "$INSTALL_DIR"
-    source "$VENV_NAME/bin/activate"
-    
-    if python test_setup.py; then
-        print_status "Installation test passed! ✓"
-    else
-        print_error "Installation test failed!"
-        return 1
-    fi
-}
-
-# Print usage instructions
-print_usage() {
-    echo ""
-    echo -e "${GREEN}=== Installation Complete! ===${NC}"
-    echo ""
-    echo "Installation directory: $INSTALL_DIR"
-    echo ""
-    echo -e "${BLUE}Quick Start:${NC}"
-    echo "  # Use the convenient start script (recommended)"
-    echo "  cd $INSTALL_DIR && ./start.sh"
-    echo ""
-    echo "  # Or manual activation"
-    echo "  cd $INSTALL_DIR"
-    echo "  source $VENV_NAME/bin/activate"
-    echo "  python app.py"
-    echo ""
-    echo -e "${BLUE}Usage Examples:${NC}"
-    echo "  # Basic usage with sample document"
-    echo "  python app.py"
-    echo ""
-    echo "  # Use your own document"
-    echo "  python app.py --document /path/to/your/book.txt"
-    echo ""
-    echo "  # Use voice cloning"
-    echo "  python app.py --document book.txt --voice narrator.wav"
-    echo ""
-    echo "  # Auto voice detection (place 'example.wav' in project folder)"
-    echo "  python app.py --document book.txt  # Will auto-use example.wav if found"
-    echo ""
-    echo "  # Expressive narration"
-    echo "  python app.py --exaggeration 0.7 --cfg-weight 0.3"
-    echo ""
-    echo -e "${BLUE}Global launcher:${NC}"
-    echo "  audiobook --document book.txt --voice narrator.wav"
-    echo ""
-    echo -e "${YELLOW}Reloading shell to enable global launcher...${NC}"
-    # Reload bash configuration
-    if [ -f ~/.bashrc ]; then
-        source ~/.bashrc
-        echo -e "${GREEN}✅ Shell reloaded! Global launcher is now available.${NC}"
-    else
-        echo -e "${YELLOW}Note: Restart your terminal or run 'source ~/.bashrc' to use the global launcher${NC}"
-    fi
-}
-
-# Main execution
-main() {
-    check_ubuntu
-    check_gpu
-    update_system
-    install_system_deps
-    install_cuda_support
-    create_install_dir
-    create_venv
-    install_python_deps
-    download_scripts
-    create_launcher
-    test_installation
-    print_usage
-}
-
-# Run main function
-main

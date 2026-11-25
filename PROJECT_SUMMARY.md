@@ -1,3 +1,7 @@
+> **Historical document.** The 0.2.0 refactor moved all logic into the
+> `audiobooker/` package (see README.md for the current layout and flags);
+> the file list and code snippets below describe the 0.0.x scripts.
+
 # Audiobook Creator Project Summary
 
 ## Repository

@@ -1,5 +1,10 @@
 # Web Interface Guide
 
+> **Updated in 0.2.0** — the commands are now `audiobook`, `audiobook-remote` and
+> `audiobook-web` (installed by `pip install -e .`). `python app.py …` still works.
+> See [README.md](README.md) for the new flags: `--dry-run`, `--max-chunk-length`,
+> `--retries`, `--strict`, `--no-resume`, `--keep-parts`, `--chapter-pattern`.
+
 ## 🌐 Chatterbox Audiobook Creator Web Interface
 
 The web interface provides an easy-to-use browser-based way to create audiobooks without using the command line.

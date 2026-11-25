@@ -45,9 +45,9 @@ if [ ! -f "web_interface.py" ]; then
     exit 1
 fi
 
-if [ ! -f "app.py" ]; then
-    echo -e "${RED}❌ app.py not found in current directory${NC}"
-    echo "The web interface requires app.py to function."
+if ! python -c "import audiobooker" 2>/dev/null; then
+    echo -e "${RED}❌ The audiobooker package is not installed in this environment${NC}"
+    echo "Install it with:  pip install -e ."
     exit 1
 fi
 
@@ -58,7 +58,7 @@ echo -e "${CYAN}🔍 Checking for Gradio...${NC}"
 python -c "import gradio" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo -e "${YELLOW}⚠️  Gradio not found. Installing...${NC}"
-    pip install gradio>=4.0.0
+    pip install "gradio>=4.0.0"
     if [ $? -ne 0 ]; then
         echo -e "${RED}❌ Failed to install Gradio${NC}"
         exit 1
@@ -93,4 +93,4 @@ echo -e "${YELLOW}   • Press Ctrl+C to stop the server${NC}"
 echo ""
 
 # Launch the web interface
-python web_interface.py
+python -m audiobooker.web
